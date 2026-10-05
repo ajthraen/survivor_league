@@ -4,16 +4,1602 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Survivor League</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
-  body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#0E1512;color:#EEEBE1;font-family:system-ui,sans-serif;text-align:center}
-  h1{font-size:2.4rem;margin:0 0 .5rem;color:#E7B23D}
-  p{color:#8FA096;margin:0}
+  :root{
+    --bg: #0E1512;
+    --surface: #161F1B;
+    --surface-2: #1D2823;
+    --line: #2A362F;
+    --text: #EEEBE1;
+    --muted: #8FA096;
+    --accent: #E7B23D;
+    --accent-dim: #6b5a2c;
+    --turf: #4F8F5B;
+    --danger: #B5615A;
+    --font-display: 'Barlow Condensed', sans-serif;
+    --font-body: 'Inter', sans-serif;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; background:var(--bg); color:var(--text);
+    font-family: var(--font-body);
+    -webkit-font-smoothing: antialiased;
+  }
+  h1,h2,h3,.display{ font-family: var(--font-display); font-weight:700; letter-spacing:0.2px; }
+  a{color:inherit;}
+  button{ font-family: var(--font-body); cursor:pointer; }
+  select, input{ font-family: var(--font-body); }
+
+  #banner{
+    position:sticky; top:0; z-index:20;
+    background: linear-gradient(180deg, #1B2620 0%, #141C18 100%);
+    border-bottom: 1px solid var(--line);
+    padding: 10px 20px;
+    display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px;
+  }
+  #banner .brand{ font-family:var(--font-display); font-size:22px; font-weight:800; color:var(--text); display:flex; align-items:center; gap:10px;}
+  #banner .brand .dot{ width:10px;height:10px;border-radius:50%; background:var(--accent); box-shadow:0 0 8px var(--accent);}
+  #banner .clock{ display:flex; align-items:baseline; gap:10px; }
+  #banner .clock .label{ color:var(--muted); font-size:12px; }
+  #banner .clock .time{ font-family:var(--font-display); font-size:26px; color:var(--accent); letter-spacing:1px; }
+
+  nav{
+    display:flex; gap:2px; background:var(--surface); border-bottom:1px solid var(--line);
+    padding: 0 20px; overflow-x:auto;
+  }
+  nav button{
+    background:none; border:none; color:var(--muted); padding:14px 16px;
+    font-size:14px; font-weight:600; border-bottom:2px solid transparent; white-space:nowrap;
+  }
+  nav button.active{ color:var(--text); border-bottom:2px solid var(--accent); }
+  nav .spacer{flex:1;}
+  nav .account-btn{ color:var(--accent); }
+
+  main{ max-width:920px; margin:0 auto; padding: 24px 20px 80px; }
+
+  .card{
+    background:var(--surface); border:1px solid var(--line); border-radius:6px;
+    padding:20px; margin-bottom:16px;
+  }
+  .card-accent{ border-left:3px solid var(--accent); }
+  .muted{ color:var(--muted); }
+  .row{ display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+  .grid{ display:grid; gap:12px; }
+  label{ display:block; font-size:13px; color:var(--muted); margin-bottom:5px; }
+  select, input[type=text], input[type=password], input[type=number]{
+    background:var(--surface-2); color:var(--text); border:1px solid var(--line); border-radius:4px;
+    padding:9px 10px; font-size:14px; width:100%;
+  }
+  .btn{
+    background:var(--accent); color:#20180a; border:none; border-radius:4px; padding:10px 16px;
+    font-weight:700; font-size:14px;
+  }
+  .btn:disabled{ background:var(--line); color:var(--muted); cursor:not-allowed; }
+  .btn-outline{
+    background:transparent; border:1px solid var(--line); color:var(--text); border-radius:4px; padding:9px 14px; font-size:13px; font-weight:600;
+  }
+  .btn-danger{ background:var(--danger); color:#2a1211; }
+  .field{ margin-bottom:12px; }
+  .hr{ border:none; border-top:1px solid var(--line); margin:16px 0; }
+  .team-tile{
+    background:var(--surface-2); border:1px solid var(--line); border-radius:5px; padding:12px 14px; flex:1; min-width:130px;
+  }
+  .team-tile .tname{ font-family:var(--font-display); font-size:19px; font-weight:700; }
+  .team-tile .trecord{ font-size:12px; color:var(--muted); margin-top:2px; }
+  .vs{ color:var(--muted); font-family:var(--font-display); font-size:16px; padding:0 6px;}
+  .matchup{ display:flex; align-items:center; gap:8px; margin-bottom:10px; }
+  .score{ font-family:var(--font-display); font-size:22px; font-weight:700; }
+  .winner{ color:var(--accent); }
+  .pill{ display:inline-block; padding:2px 9px; border-radius:20px; font-size:11px; font-weight:700; }
+  .pill-live{ background:#5a2c2c; color:#f0a; color:#ff8f7a;}
+  .pill-final{ background:#22301f; color:var(--turf); }
+  .pill-scheduled{ background:var(--surface-2); color:var(--muted); }
+  table{ width:100%; border-collapse:collapse; }
+  th,td{ text-align:left; padding:9px 6px; border-bottom:1px solid var(--line); font-size:14px; }
+  th{ color:var(--muted); font-weight:600; font-size:12px; text-transform:none;}
+  .eliminated-row td{ color:#6b7770; }
+  .eliminated-row .name{ color:#7d8e83; }
+  .badge-out{ color:var(--danger); font-size:12px; font-weight:700; margin-left:8px;}
+  .empty{ color:var(--muted); font-style:italic; padding:20px 0; text-align:center; }
+  .msg{ padding:10px 12px; border-radius:4px; font-size:14px; margin-bottom:14px; }
+  .msg-error{ background:#3a2020; color:#ffb3a7; border:1px solid #5c2b2b;}
+  .msg-ok{ background:#1c3324; color:#a7e3bb; border:1px solid #2c5138;}
 </style>
 </head>
 <body>
-  <div>
-    <h1>Survivor League</h1>
-    <p>The new home is coming soon.</p>
+
+<div id="banner">
+  <div class="brand"><span class="dot"></span> Survivor League</div>
+  <div class="clock">
+    <span class="label" id="deadline-label">Picks lock (Wed 11:59pm ET) in</span>
+    <span class="time" id="countdown">--:--:--</span>
   </div>
+</div>
+
+<nav id="nav"></nav>
+<main id="main"></main>
+
+<script>
+const STORAGE_KEY = 'league-data-v1';
+const SESSION_KEY = 'session-v1';
+// Players eliminated from Survivor can buy back in by submitting a winning pick
+// for any week up to and including this one. Elimination in weeks 1-3 can be bought
+// back (so the last rebuy pick is Week 4); an elimination in Week 4 or later is final.
+const BUY_BACK_CUTOFF_WEEK = 4;
+
+const TEAMS = [
+ ["ARI","Cardinals","#97233F"],["ATL","Falcons","#A71930"],["BAL","Ravens","#241773"],
+ ["BUF","Bills","#00338D"],["CAR","Panthers","#0085CA"],["CHI","Bears","#0B162A"],
+ ["CIN","Bengals","#FB4F14"],["CLE","Browns","#311D00"],["DAL","Cowboys","#041E42"],
+ ["DEN","Broncos","#FB4F14"],["DET","Lions","#0076B6"],["GB","Packers","#203731"],
+ ["HOU","Texans","#03202F"],["IND","Colts","#002C5F"],["JAX","Jaguars","#006778"],
+ ["KC","Chiefs","#E31837"],["LV","Raiders","#000000"],["LAC","Chargers","#0080C6"],
+ ["LAR","Rams","#003594"],["MIA","Dolphins","#008E97"],["MIN","Vikings","#4F2683"],
+ ["NE","Patriots","#002244"],["NO","Saints","#D3BC8D"],["NYG","Giants","#0B2265"],
+ ["NYJ","Jets","#125740"],["PHI","Eagles","#004C54"],["PIT","Steelers","#FFB612"],
+ ["SF","49ers","#AA0000"],["SEA","Seahawks","#002244"],["TB","Buccaneers","#D50A0A"],
+ ["TEN","Titans","#4B92DB"],["WAS","Commanders","#5A1414"]
+];
+const TEAM_MAP = Object.fromEntries(TEAMS.map(t=>[t[0],{abbr:t[0],name:t[1],color:t[2]}]));
+const TEAMS_AZ = [...TEAMS].sort((a,b)=>a[1].localeCompare(b[1]));
+
+// Resolves common city/nickname text (as people type it) to team abbreviations.
+const TEAM_NAME_LOOKUP = {
+  "ARIZONA":"ARI","CARDINALS":"ARI","ARI":"ARI",
+  "ATLANTA":"ATL","FALCONS":"ATL","ATL":"ATL",
+  "BALTIMORE":"BAL","RAVENS":"BAL","BAL":"BAL",
+  "BUFFALO":"BUF","BILLS":"BUF","BUF":"BUF",
+  "CAROLINA":"CAR","PANTHERS":"CAR","CAR":"CAR",
+  "CHICAGO":"CHI","BEARS":"CHI","CHI":"CHI",
+  "CINCINNATI":"CIN","BENGALS":"CIN","CIN":"CIN",
+  "CLEVELAND":"CLE","BROWNS":"CLE","CLE":"CLE",
+  "DALLAS":"DAL","COWBOYS":"DAL","DAL":"DAL",
+  "DENVER":"DEN","BRONCOS":"DEN","DEN":"DEN",
+  "DETROIT":"DET","LIONS":"DET","DET":"DET",
+  "GREEN BAY":"GB","PACKERS":"GB","GB":"GB",
+  "HOUSTON":"HOU","TEXANS":"HOU","HOU":"HOU",
+  "INDIANAPOLIS":"IND","COLTS":"IND","IND":"IND",
+  "JACKSONVILLE":"JAX","JAGUARS":"JAX","JAGS":"JAX","JAX":"JAX",
+  "KANSAS CITY":"KC","CHIEFS":"KC","KC":"KC",
+  "LAS VEGAS":"LV","RAIDERS":"LV","LV":"LV",
+  "LA CHARGERS":"LAC","LOS ANGELES CHARGERS":"LAC","CHARGERS":"LAC","LAC":"LAC",
+  "LA RAMS":"LAR","LOS ANGELES RAMS":"LAR","RAMS":"LAR","LAR":"LAR",
+  "MIAMI":"MIA","DOLPHINS":"MIA","MIA":"MIA",
+  "MINNESOTA":"MIN","VIKINGS":"MIN","MIN":"MIN",
+  "NEW ENGLAND":"NE","PATRIOTS":"NE","NE":"NE",
+  "NEW ORLEANS":"NO","SAINTS":"NO","NO":"NO",
+  "NY GIANTS":"NYG","NEW YORK GIANTS":"NYG","GIANTS":"NYG","NYG":"NYG",
+  "NY JETS":"NYJ","NEW YORK JETS":"NYJ","JETS":"NYJ","NYJ":"NYJ",
+  "PHILADELPHIA":"PHI","EAGLES":"PHI","PHI":"PHI",
+  "PITTSBURGH":"PIT","STEELERS":"PIT","PIT":"PIT",
+  "SAN FRANCISCO":"SF","49ERS":"SF","NINERS":"SF","SF":"SF",
+  "SEATTLE":"SEA","SEAHAWKS":"SEA","SEA":"SEA",
+  "TAMPA BAY":"TB","BUCCANEERS":"TB","BUCS":"TB","TB":"TB",
+  "TENNESSEE":"TEN","TITANS":"TEN","TEN":"TEN",
+  "WASHINGTON":"WAS","COMMANDERS":"WAS","WAS":"WAS"
+};
+function resolveTeamName(raw){
+  const cleaned = raw.trim().toUpperCase().replace(/\s+/g,' ');
+  if(TEAM_NAME_LOOKUP[cleaned]) return TEAM_NAME_LOOKUP[cleaned];
+  const words = cleaned.split(' ');
+  const lastWord = words[words.length-1];
+  if(TEAM_NAME_LOOKUP[lastWord]) return TEAM_NAME_LOOKUP[lastWord];
+  const firstWord = words[0];
+  if(TEAM_NAME_LOOKUP[firstWord]) return TEAM_NAME_LOOKUP[firstWord];
+  return null;
+}
+
+// Full 2026 regular season schedule, [away, home] pairs per week.
+// Source: published NFL 2026 schedule. Scores are entered by the admin as games are played.
+const SEASON_SCHEDULE = {
+  1: [["NE","SEA"],["SF","LAR"],["NYJ","TEN"],["BUF","HOU"],["CHI","CAR"],["CLE","JAX"],["ATL","PIT"],["BAL","IND"],["TB","CIN"],["NO","DET"],["MIA","LV"],["ARI","LAC"],["GB","MIN"],["WAS","PHI"],["DAL","NYG"],["DEN","KC"]],
+  2: [["DET","BUF"],["MIN","CHI"],["PHI","TEN"],["CIN","HOU"],["CLE","TB"],["PIT","NE"],["GB","NYJ"],["CAR","ATL"],["NO","BAL"],["LV","LAC"],["JAX","DEN"],["MIA","SF"],["SEA","ARI"],["WAS","DAL"],["IND","KC"],["NYG","LAR"]],
+  3: [["ATL","GB"],["HOU","IND"],["KC","MIA"],["LAC","BUF"],["TEN","NYG"],["CIN","PIT"],["SEA","WAS"],["NE","JAX"],["CAR","CLE"],["NYJ","DET"],["ARI","SF"],["MIN","TB"],["LV","NO"],["BAL","DAL"],["LAR","DEN"],["PHI","CHI"]],
+  4: [["PIT","CLE"],["IND","WAS"],["DAL","HOU"],["NYJ","CHI"],["JAX","CIN"],["TEN","BAL"],["ARI","NYG"],["LAR","PHI"],["GB","TB"],["NE","BUF"],["MIA","MIN"],["DEN","SF"],["LAC","SEA"],["KC","LV"],["DET","CAR"],["ATL","NO"]],
+  5: [["TB","DAL"],["PHI","JAX"],["HOU","TEN"],["MIN","NO"],["CLE","NYJ"],["CIN","MIA"],["LV","NE"],["IND","PIT"],["NYG","WAS"],["DEN","LAC"],["SF","SEA"],["DET","ARI"],["CHI","GB"],["BAL","ATL"],["BUF","LAR"]],
+  6: [["SEA","DEN"],["HOU","JAX"],["TEN","IND"],["NYJ","NE"],["NO","NYG"],["CAR","PHI"],["CHI","ATL"],["PIT","TB"],["BAL","CLE"],["ARI","LAR"],["BUF","LV"],["LAC","KC"],["DAL","GB"],["WAS","SF"]],
+  7: [["NE","CHI"],["PIT","NO"],["CLE","TEN"],["IND","MIN"],["NYG","HOU"],["SF","ATL"],["TB","CAR"],["MIA","NYJ"],["CIN","BAL"],["DEN","ARI"],["LAR","LV"],["GB","DET"],["KC","SEA"],["DAL","PHI"]],
+  8: [["CAR","GB"],["ARI","DAL"],["BAL","BUF"],["TEN","CIN"],["LV","NYJ"],["CLE","PIT"],["ATL","TB"],["MIN","DET"],["IND","JAX"],["LAC","LAR"],["KC","DEN"],["NE","MIA"],["PHI","WAS"],["CHI","SEA"]],
+  9: [["JAX","BAL"],["CIN","ATL"],["CLE","NO"],["NYJ","KC"],["DET","MIA"],["LAR","WAS"],["DEN","CAR"],["NYG","PHI"],["DAL","IND"],["HOU","LAC"],["LV","SF"],["ARI","SEA"],["GB","NE"],["TB","CHI"],["BUF","MIN"]],
+  10: [["WAS","NYG"],["NE","DET"],["CAR","NO"],["MIN","GB"],["JAX","TEN"],["MIA","IND"],["KC","ATL"],["HOU","CLE"],["BUF","NYJ"],["SEA","LV"],["LAR","ARI"],["SF","DAL"],["PIT","CIN"],["LAC","BAL"]],
+  11: [["IND","HOU"],["NO","CHI"],["TEN","DAL"],["ARI","KC"],["JAX","NYG"],["MIA","BUF"],["TB","DET"],["BAL","CAR"],["NYJ","LAC"],["LV","DEN"],["PIT","PHI"],["MIN","SF"],["CIN","WAS"]],
+  12: [["GB","LAR"],["CHI","DET"],["PHI","DAL"],["KC","BUF"],["DEN","PIT"],["BAL","HOU"],["ATL","MIN"],["NYJ","MIA"],["NO","CIN"],["NYG","IND"],["LV","CLE"],["TEN","JAX"],["SEA","SF"],["WAS","ARI"],["NE","LAC"],["CAR","TB"]],
+  13: [["KC","LAR"],["JAX","CHI"],["WAS","TEN"],["GB","NO"],["SF","NYG"],["DET","ATL"],["LAC","TB"],["CIN","CLE"],["MIA","DEN"],["PHI","ARI"],["CAR","MIN"],["BUF","NE"],["HOU","PIT"],["DAL","SEA"]],
+  14: [["MIN","NE"],["DEN","NYJ"],["IND","PHI"],["TB","BAL"],["TEN","DET"],["HOU","WAS"],["NO","CAR"],["CHI","MIA"],["ATL","CLE"],["LAC","LV"],["LAR","SF"],["NYG","SEA"],["KC","CIN"],["BUF","GB"],["PIT","JAX"]],
+  15: [["SF","LAC"],["SEA","PHI"],["CHI","BUF"],["MIA","GB"],["IND","TEN"],["JAX","HOU"],["CLE","NYG"],["BAL","PIT"],["NO","TB"],["ATL","WAS"],["CIN","CAR"],["NYJ","ARI"],["DEN","LV"],["DAL","LAR"],["DET","MIN"],["NE","KC"]],
+  16: [["HOU","PHI"],["GB","CHI"],["BUF","DEN"],["LAR","SEA"],["WAS","MIN"],["CAR","PIT"],["CIN","IND"],["TB","ATL"],["ARI","NO"],["NE","NYJ"],["LAC","MIA"],["CLE","BAL"],["TEN","LV"],["SF","KC"],["JAX","DAL"],["NYG","DET"]],
+  17: [["BAL","CIN"],["KC","LAC"],["LAR","TB"],["WAS","JAX"],["DEN","NE"],["PIT","TEN"],["NYG","DAL"],["NO","ATL"],["BUF","MIA"],["MIN","NYJ"],["IND","CLE"],["SEA","CAR"],["LV","ARI"],["DET","CHI"],["PHI","SF"],["HOU","GB"]],
+  18: [["SEA","LAR"],["LAC","DEN"],["SF","ARI"],["LV","KC"],["TEN","HOU"],["DET","GB"],["CHI","MIN"],["TB","NO"],["PHI","NYG"],["MIA","NE"],["JAX","IND"],["NYJ","BUF"],["CLE","CIN"],["PIT","BAL"],["DAL","WAS"],["ATL","CAR"]]
+};
+function buildScheduleGames(week){
+  return (SEASON_SCHEDULE[week]||[]).map(([away,home])=>({
+    id: uid('g'), week: Number(week), home, away,
+    homeScore: null, awayScore: null, status: 'scheduled', startTime: null
+  }));
+}
+
+let state = null;
+let session = { userId: null };
+let activeTab = 'home';
+let msg = null;
+
+// ---------- storage helpers (db capability for shared data, localStorage for session) ----------
+let dbDocRef = null;
+let storageMode = 'claude'; // 'claude' = shared db capability, 'local' = this browser only
+// Minimal stand-in for a database document, backed by this browser's localStorage.
+// Used when the app runs outside Claude (e.g. GitHub Pages) until a real backend is added.
+function makeLocalDoc(key){
+  return {
+    async get(){
+      const raw = localStorage.getItem(key);
+      return { exists: raw!==null, data: ()=> JSON.parse(raw) };
+    },
+    async set(obj){ localStorage.setItem(key, JSON.stringify(obj)); }
+  };
+}
+async function initDb(){
+  try{
+    if(window.claude){
+      const dbApi = await window.claude.use('db');
+      dbDocRef = dbApi ? dbApi.doc('league/data') : null;
+      storageMode = 'claude';
+    } else {
+      dbDocRef = makeLocalDoc('league-data-local');
+      storageMode = 'local';
+    }
+  }catch(e){ dbDocRef = null; }
+}
+function defaultState(){
+  const games = {};
+  for(let w=1; w<=18; w++) games[w] = buildScheduleGames(w);
+  return { users: [], entries: [], games, roundupPosts: [], meta: { season: 2026, currentWeek: 1, openDay: 1, openHour: 0, openMinute: 0, deadlineDay: 3, deadlineHour: 23, deadlineMinute: 59 } };
+}
+async function loadState(){
+  await initDb();
+  try{
+    if(!dbDocRef) throw new Error('db capability unavailable');
+    const snap = await dbDocRef.get();
+    if(snap.exists){
+      state = JSON.parse(JSON.stringify(snap.data())); // deep-clone: the snapshot object itself is read-only
+    } else {
+      state = defaultState();
+      await saveState();
+    }
+  }catch(e){
+    state = defaultState();
+  }
+  try{
+    const raw = localStorage.getItem(SESSION_KEY);
+    session = raw ? JSON.parse(raw) : { userId: null };
+  }catch(e){ session = { userId: null }; }
+}
+async function saveState(){
+  try{
+    if(!dbDocRef) throw new Error('db capability unavailable');
+    await dbDocRef.set(state);
+  }
+  catch(e){
+    showMsg('error','Could not save — please try again. (Are you signed into the right account?)');
+    throw e; // stop the calling handler here so it can't show a false "saved" message
+  }
+}
+async function saveSession(){
+  try{ localStorage.setItem(SESSION_KEY, JSON.stringify(session)); }catch(e){}
+}
+
+function showMsg(type,text){ msg = {type,text}; render(); setTimeout(()=>{ msg=null; render(); }, 4000); }
+function uid(prefix){ return prefix+'_'+Math.random().toString(36).slice(2,10); }
+
+// ---------- domain helpers ----------
+function currentUser(){ return state.users.find(u=>u.id===session.userId) || null; }
+function userEntries(userId){ return state.entries.filter(e=>e.userId===userId); }
+function weekGames(week){ return state.games[week] || []; }
+function teamsPlayingInWeek(week){
+  const set = new Set();
+  weekGames(week).forEach(g=>{ set.add(g.home); set.add(g.away); });
+  return set;
+}
+function computeRecord(abbr){
+  let w=0,l=0,t=0;
+  Object.values(state.games).forEach(list=>list.forEach(g=>{
+    if(g.status!=='final') return;
+    if(g.home!==abbr && g.away!==abbr) return;
+    const me = g.home===abbr ? g.homeScore : g.awayScore;
+    const opp = g.home===abbr ? g.awayScore : g.homeScore;
+    if(me>opp) w++; else if(me<opp) l++; else t++;
+  }));
+  return `${w}-${l}${t?'-'+t:''}`;
+}
+function gameResultForTeam(week, abbr){
+  const g = weekGames(week).find(g=>g.home===abbr||g.away===abbr);
+  if(!g || g.status!=='final') return null;
+  const me = g.home===abbr ? g.homeScore : g.awayScore;
+  const opp = g.home===abbr ? g.awayScore : g.homeScore;
+  if(me>opp) return 'win'; if(me<opp) return 'loss'; return 'tie';
+}
+function teamScoreInWeek(week, abbr){
+  const g = weekGames(week).find(g=>g.home===abbr||g.away===abbr);
+  if(!g || g.status!=='final') return null;
+  return g.home===abbr ? g.homeScore : g.awayScore;
+}
+function highScoreTeamOfWeek(week){
+  let best=null, bestScore=-1;
+  weekGames(week).forEach(g=>{
+    if(g.status!=='final') return;
+    if(g.homeScore>bestScore){ bestScore=g.homeScore; best=g.home; }
+    if(g.awayScore>bestScore){ bestScore=g.awayScore; best=g.away; }
+  });
+  return best;
+}
+function usedTeams(entry){
+  return Object.values(entry.picks||{}).map(p=>p.survivor).filter(Boolean);
+}
+// An entry counts as "alive" for display if it's actually alive, OR it was eliminated
+// within the buy-back window and has already submitted a pick for a later buy-back
+// week that hasn't been processed yet (a pending buy-back attempt).
+function pendingBuyBackWeek(e){
+  if(!e.eliminated || !e.eliminatedWeek || e.eliminatedWeek>=BUY_BACK_CUTOFF_WEEK) return null;
+  for(let w=e.eliminatedWeek+1; w<=BUY_BACK_CUTOFF_WEEK; w++){
+    if(e.picks[w] && e.picks[w].survivor) return w;
+  }
+  return null;
+}
+// Picks for the current week are closed once any of that week's games has started
+// (by status, or by its kickoff time having passed).
+function currentWeekPicksClosed(){
+  const w = state.meta.currentWeek;
+  const now = Date.now();
+  return weekGames(w).some(g => g.status!=='scheduled' || (g.startTime && Date.parse(g.startTime) <= now));
+}
+// Alive for display: not eliminated AND (if this week's picks have closed) has a pick
+// this week. Eliminated entries count as alive only with a pending buy-back pick.
+function isDisplayAlive(e){
+  if(e.eliminated) return pendingBuyBackWeek(e)!==null;
+  if(currentWeekPicksClosed()){
+    const p = e.picks[state.meta.currentWeek];
+    if(!p || !p.survivor) return false;
+  }
+  return true;
+}
+// The week to show as an entry's elimination week (a missed pick counts as this week).
+function displayEliminatedWeek(e){ return e.eliminated ? e.eliminatedWeek : state.meta.currentWeek; }
+
+// Computes how many entries "count" each week:
+// - Weeks 1 through the buy-back cutoff: the number of entries that submitted a survivor
+//   pick that week (before wins/losses are applied) — since anyone can buy back in through
+//   that window, a raw submission count is what "how many are playing" means here.
+// - From the week after buy-back closes onward: the true number of surviving entries,
+//   reconstructed via the same win/loss/buy-back simulation Process Week uses, since from
+//   that point elimination is permanent and no longer a matter of who simply submitted.
+function computeAliveByWeekSeries(){
+  const maxWeek = state.meta.currentWeek;
+  const alive = {};
+  state.entries.forEach(e=>{ alive[e.id] = true; });
+  const series = [];
+  for(let w=1; w<=maxWeek; w++){
+    const withinBuyBack = w<=BUY_BACK_CUTOFF_WEEK;
+    state.entries.forEach(e=>{
+      const wasAlive = alive[e.id];
+      if(!wasAlive && !withinBuyBack) return; // permanently out
+      const pick = e.picks[w];
+      if(!pick || !pick.survivor){
+        if(wasAlive) alive[e.id] = false;
+        return;
+      }
+      const result = gameResultForTeam(w, pick.survivor);
+      if(result==='loss') alive[e.id] = false;
+      else if(result==='win' || result==='tie'){ if(!wasAlive) alive[e.id] = true; }
+      // result === null (game not final yet) leaves status unchanged for this week.
+    });
+    const count = withinBuyBack
+      ? state.entries.filter(e=>e.picks[w] && e.picks[w].survivor).length
+      : Object.values(alive).filter(Boolean).length;
+    series.push({ week: w, count });
+  }
+  return series;
+}
+
+// Re-simulates ONE entry's alive/eliminated status from Week 1 forward using the exact
+// same win/loss/buy-back rules as Process Week. Call this after manually correcting a
+// past week's pick so any downstream elimination status stays correct automatically.
+function recalculateEntryStatus(entry){
+  let alive = true, eliminatedWeek = null;
+  for(let w=1; w<=state.meta.currentWeek; w++){
+    const withinBuyBack = w<=BUY_BACK_CUTOFF_WEEK;
+    if(!alive && !withinBuyBack) break; // permanently out — status locked from here on
+    const pick = entry.picks[w];
+    if(!pick || !pick.survivor){
+      if(alive){ alive = false; eliminatedWeek = w; }
+      continue;
+    }
+    const result = gameResultForTeam(w, pick.survivor);
+    if(result==='loss'){ alive = false; eliminatedWeek = w; }
+    else if(result==='win' || result==='tie'){ if(!alive){ alive = true; eliminatedWeek = null; } }
+    // result === null (game not final yet) leaves status unchanged for this week.
+  }
+  entry.eliminated = !alive;
+  entry.eliminatedWeek = alive ? null : eliminatedWeek;
+}
+
+// ---------- ET pick window (open/close) ----------
+function nowInET(){ return new Date(new Date().toLocaleString('en-US', {timeZone:'America/New_York'})); }
+const DAY_NAMES = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+function formatClock(h,m){
+  let period = h>=12 ? 'pm' : 'am';
+  let hh = h % 12; if(hh===0) hh = 12;
+  return `${hh}:${String(m).padStart(2,'0')}${period}`;
+}
+// endOfMinute=true treats the target as inclusive through :59.999 of that minute (used for
+// the close time, so "11:59pm" means picks are still allowed up through that whole minute).
+function nextOccurrence(day, hour, minute, endOfMinute){
+  const now = nowInET();
+  const target = new Date(now);
+  const curDay = target.getDay();
+  let daysUntil = (day - curDay + 7) % 7;
+  target.setDate(target.getDate() + daysUntil);
+  target.setHours(hour, minute, endOfMinute?59:0, endOfMinute?999:0);
+  if(target <= now){ target.setDate(target.getDate()+7); }
+  return target;
+}
+function mostRecentOccurrence(day, hour, minute, endOfMinute){
+  const now = nowInET();
+  const target = new Date(now);
+  const curDay = target.getDay();
+  let daysSince = (curDay - day + 7) % 7;
+  target.setDate(target.getDate() - daysSince);
+  target.setHours(hour, minute, endOfMinute?59:0, endOfMinute?999:0);
+  if(target > now){ target.setDate(target.getDate()-7); }
+  return target;
+}
+function getOpenSettings(){
+  return {
+    day: state?.meta?.openDay ?? 1,
+    hour: state?.meta?.openHour ?? 0,
+    minute: state?.meta?.openMinute ?? 0
+  };
+}
+function getCloseSettings(){
+  return {
+    day: state?.meta?.deadlineDay ?? 3,
+    hour: state?.meta?.deadlineHour ?? 23,
+    minute: state?.meta?.deadlineMinute ?? 59
+  };
+}
+function nextOpenTime(){ const o = getOpenSettings(); return nextOccurrence(o.day, o.hour, o.minute, false); }
+function nextCloseTime(){ const c = getCloseSettings(); return nextOccurrence(c.day, c.hour, c.minute, true); }
+function isPickWindowOpen(){
+  const o = getOpenSettings(), c = getCloseSettings();
+  const lastOpen = mostRecentOccurrence(o.day, o.hour, o.minute, false);
+  const lastClose = mostRecentOccurrence(c.day, c.hour, c.minute, true);
+  return lastOpen > lastClose;
+}
+function updateDeadlineLabel(){
+  const el = document.getElementById('deadline-label');
+  if(!el || !state) return;
+  const o = getOpenSettings(), c = getCloseSettings();
+  if(isPickWindowOpen()){
+    el.textContent = `Picks lock (${DAY_NAMES[c.day]} ${formatClock(c.hour,c.minute)} ET) in`;
+  } else {
+    el.textContent = `Picks open (${DAY_NAMES[o.day]} ${formatClock(o.hour,o.minute)} ET) in`;
+  }
+}
+
+function tickCountdown(){
+  const el = document.getElementById('countdown');
+  if(!el) return;
+  updateDeadlineLabel();
+  const target = isPickWindowOpen() ? nextCloseTime() : nextOpenTime();
+  const diff = target - nowInET();
+  const d = Math.floor(diff/86400000);
+  const h = Math.floor((diff%86400000)/3600000);
+  const m = Math.floor((diff%3600000)/60000);
+  const s = Math.floor((diff%60000)/1000);
+  el.textContent = `${d}d ${String(h).padStart(2,'0')}h ${String(m).padStart(2,'0')}m ${String(s).padStart(2,'0')}s`;
+}
+setInterval(tickCountdown, 1000);
+
+// ---------- ESPN fetch (with manual fallback) ----------
+// ESPN's scoreboard endpoint is unreliable when week+year are combined directly,
+// so we first look up the exact date range for the requested week from the season
+// calendar, then fetch scores for that date range (a more reliable query shape).
+async function fetchWeekFromESPN(week){
+  try{
+    const baseRes = await fetch('https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard');
+    if(!baseRes.ok) throw new Error('base fetch failed');
+    const baseData = await baseRes.json();
+    const calendar = baseData.leagues?.[0]?.calendar || [];
+    const regSeason = calendar.find(c=>c.label==='Regular Season');
+    const weekEntry = regSeason && regSeason.entries.find(e=>e.value===String(week));
+    if(!weekEntry) throw new Error('week not found in calendar');
+    const toYMD = iso => iso.slice(0,10).replace(/-/g,'');
+    const range = `${toYMD(weekEntry.startDate)}-${toYMD(weekEntry.endDate)}`;
+    const res = await fetch(`https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?dates=${range}&limit=1000`);
+    if(!res.ok) throw new Error('range fetch failed');
+    const data = await res.json();
+    return (data.events||[])
+      .filter(ev => ev.week && ev.week.number===Number(week))
+      .map(ev=>{
+        const comp = ev.competitions[0];
+        const home = comp.competitors.find(c=>c.homeAway==='home');
+        const away = comp.competitors.find(c=>c.homeAway==='away');
+        return {
+          id: ev.id, week: Number(week),
+          home: home.team.abbreviation, away: away.team.abbreviation,
+          homeScore: home.score!==undefined ? parseInt(home.score)||0 : null,
+          awayScore: away.score!==undefined ? parseInt(away.score)||0 : null,
+          status: comp.status.type.completed ? 'final' : (comp.status.type.state==='in' ? 'live' : 'scheduled'),
+          startTime: ev.date
+        };
+      });
+  }catch(e){
+    return null;
+  }
+}
+
+// ---------- render root ----------
+function setTab(t){ activeTab = t; render(); }
+
+function render(){
+  renderNav();
+  const main = document.getElementById('main');
+  main.innerHTML = '';
+  if(storageMode==='local'){
+    const n = document.createElement('div');
+    n.className = 'msg';
+    n.style.cssText = 'background:var(--surface-2);border:1px solid var(--line);color:var(--muted);';
+    n.textContent = 'Preview mode: data on this page is saved only in this browser and is not shared with other players yet.';
+    main.appendChild(n);
+  }
+  if(msg){
+    const d = document.createElement('div');
+    d.className = 'msg ' + (msg.type==='error'?'msg-error':'msg-ok');
+    d.textContent = msg.text;
+    main.appendChild(d);
+  }
+  const page = document.createElement('div');
+  if(activeTab==='home') page.innerHTML = renderHome();
+  else if(activeTab==='roundups') page.innerHTML = renderRoundUps();
+  else if(activeTab==='picks') page.innerHTML = renderPicks();
+  else if(activeTab==='standings') page.innerHTML = renderStandings();
+  else if(activeTab==='games') page.innerHTML = renderGames();
+  else if(activeTab==='stats') page.innerHTML = renderLeagueStats();
+  else if(activeTab==='admin') page.innerHTML = renderAdmin();
+  else if(activeTab==='account') page.innerHTML = renderAccount();
+  main.appendChild(page);
+  attachHandlers();
+  tickCountdown();
+}
+
+function renderNav(){
+  const nav = document.getElementById('nav');
+  const user = currentUser();
+  const tabs = [
+    ['home','Home'], ['roundups','Weekly Recap'], ['standings','Standings'], ['games','Games'], ['stats','League Stats']
+  ];
+  if(user && user.isAdmin) tabs.push(['admin','Admin']);
+  let html = tabs.map(([id,label])=>`<button data-tab="${id}" class="${activeTab===id?'active':''}">${label}</button>`).join('');
+  html += `<div class="spacer"></div>`;
+  html += `<button data-tab="account" class="account-btn ${activeTab==='account'?'active':''}">${user ? user.displayName : 'Log in'}</button>`;
+  nav.innerHTML = html;
+  nav.querySelectorAll('button').forEach(b=>b.addEventListener('click', ()=>setTab(b.dataset.tab)));
+}
+
+// ---------- HOME ----------
+function renderHome(){
+  const activeCount = state.entries.filter(e=>isDisplayAlive(e)).length;
+  const week = state.meta.currentWeek;
+  const user = currentUser();
+  const windowOpen = isPickWindowOpen();
+  const o = getOpenSettings(), c = getCloseSettings();
+
+  let picksCard = '';
+  if(!user){
+    picksCard = `
+    <div class="card">
+      <p>Log in or create an account to submit your picks each week.</p>
+      <button class="btn" data-nav="account">Log in / Sign up</button>
+    </div>`;
+  } else if(windowOpen){
+    picksCard = `
+    <div class="card">
+      <p>Picks are open — head to <strong>Make Picks</strong> to lock in Week ${week} before they close ${DAY_NAMES[c.day]} ${formatClock(c.hour,c.minute)} ET.</p>
+      <button class="btn" data-nav="picks">Make Picks</button>
+    </div>`;
+  } else {
+    picksCard = `
+    <div class="card">
+      <p class="muted">Picks aren't open right now. They'll open <strong style="color:var(--text)">${DAY_NAMES[o.day]} ${formatClock(o.hour,o.minute)} ET</strong>.</p>
+    </div>`;
+  }
+
+  return `
+  <div class="card card-accent">
+    <h1 style="margin:0 0 6px;font-size:28px;">Week ${week}</h1>
+    <p class="muted" style="margin:0;">${state.entries.length} total entries · <strong style="color:var(--accent)">${activeCount}</strong> still alive</p>
+  </div>
+  ${picksCard}
+  <div class="card">
+    <h3 style="margin-top:0;">How it works</h3>
+    <p class="muted" style="line-height:1.6;">Pick one team to win, every week. Pick right, you move on. Pick wrong — or your team ties or you forget to pick — you're out. You can never pick the same team twice. Last entry standing wins the season. Eliminated? You can still chase weekly bragging rights in the High Score side game.</p>
+  </div>`;
+}
+
+// ---------- MAKE PICKS ----------
+let pickEntryId = null;
+function renderPicks(){
+  const user = currentUser();
+  if(!user) return `<div class="card"><p>Please <a href="#" data-nav="account">log in</a> to make picks.</p></div>`;
+  const entries = userEntries(user.id);
+  if(entries.length===0) return `<div class="card"><p>You don't have any entries yet. Ask your commissioner to add one for you.</p></div>`;
+  if(!isPickWindowOpen()){
+    const o = getOpenSettings();
+    return `<div class="card">
+      <h2 style="margin-top:0;">Make Your Picks</h2>
+      <p class="muted">Picks aren't open right now. They'll open <strong style="color:var(--text)">${DAY_NAMES[o.day]} ${formatClock(o.hour,o.minute)} ET</strong>.</p>
+    </div>`;
+  }
+  if(!pickEntryId || !entries.find(e=>e.id===pickEntryId)) pickEntryId = entries[0].id;
+  const entry = entries.find(e=>e.id===pickEntryId);
+  const week = state.meta.currentWeek;
+  const games = weekGames(week);
+  const playing = teamsPlayingInWeek(week);
+  const used = usedTeams(entry);
+  const existingPick = entry.picks[week] || {};
+
+  const survivorOptions = TEAMS_AZ.filter(t=>playing.has(t[0])).map(t=>{
+    const disabled = used.includes(t[0]) && existingPick.survivor!==t[0];
+    return `<option value="${t[0]}" ${disabled?'disabled':''} ${existingPick.survivor===t[0]?'selected':''}>${t[1]}${disabled?' — already used':''}</option>`;
+  }).join('');
+  const highScoreOptions = TEAMS_AZ.map(t=>`<option value="${t[0]}" ${existingPick.highscore===t[0]?'selected':''}>${t[1]}</option>`).join('');
+
+  let entrySelector = '';
+  if(entries.length>1){
+    entrySelector = `<div class="field"><label>Picking for</label>
+      <select id="entry-select">${entries.map(e=>`<option value="${e.id}" ${e.id===entry.id?'selected':''}>${e.label}${e.eliminated?' (eliminated)':''}</option>`).join('')}</select>
+      </div>`;
+  }
+
+  let body = '';
+  const canBuyBack = entry.eliminated && week<=BUY_BACK_CUTOFF_WEEK;
+  if(games.length===0){
+    body = `<p class="muted">Games for Week ${week} haven't been loaded yet. Check back once your commissioner posts the schedule.</p>`;
+  } else if(entry.eliminated && !canBuyBack){
+    body = `<p><span class="badge-out">OUT since Week ${entry.eliminatedWeek}</span></p>
+      <p class="muted">This entry is eliminated from Survivor, but you can still play the High Score side game each week.</p>
+      <div class="field"><label>Week ${week} — Team you think scores the most points</label>
+      <select id="highscore-select">${highScoreOptions}</select></div>
+      <button class="btn" id="save-picks">Save Pick</button>`;
+  } else if(canBuyBack){
+    body = `<p><span class="badge-out">OUT since Week ${entry.eliminatedWeek}</span></p>
+      <p class="muted">Buy-back is open through Week ${BUY_BACK_CUTOFF_WEEK}: pick a winner this week and you're back in Survivor.</p>
+      <div class="field"><label>Week ${week} — Team to win (buy back in)</label>
+      <select id="survivor-select"><option value="">Select a team...</option>${survivorOptions}</select></div>
+      <div class="field"><label>Week ${week} — High Score side game: team you think scores the most points</label>
+      <select id="highscore-select">${highScoreOptions}</select></div>
+      <button class="btn" id="save-picks">Save Picks</button>
+      ${existingPick.survivor ? `<p class="muted" style="margin-top:10px;">Currently locked in: <strong style="color:var(--text)">${TEAM_MAP[existingPick.survivor]?.name}</strong> to win.</p>` : ''}`;
+  } else {
+    body = `
+      <div class="field"><label>Week ${week} — Team to win</label>
+      <select id="survivor-select"><option value="">Select a team...</option>${survivorOptions}</select></div>
+      <div class="field"><label>Week ${week} — High Score side game: team you think scores the most points</label>
+      <select id="highscore-select">${highScoreOptions}</select></div>
+      <button class="btn" id="save-picks">Save Picks</button>
+      ${existingPick.survivor ? `<p class="muted" style="margin-top:10px;">Currently locked in: <strong style="color:var(--text)">${TEAM_MAP[existingPick.survivor]?.name}</strong> to win.</p>` : ''}
+    `;
+  }
+
+  return `<div class="card">
+    <h2 style="margin-top:0;">Make Your Picks</h2>
+    ${entrySelector}
+    ${body}
+  </div>`;
+}
+
+// ---------- STANDINGS ----------
+function renderStandings(){
+  function ownerName(e){ const u = state.users.find(u=>u.id===e.userId); return u ? u.displayName : '—'; }
+
+  // Group entries by owner within each section so a user's entries sit together,
+  // unless that user has entries split across both active and eliminated.
+  function groupAndSort(entries, sortKeyFn){
+    const byOwner = {};
+    entries.forEach(e=>{ (byOwner[e.userId] = byOwner[e.userId] || []).push(e); });
+    const groups = Object.values(byOwner).map(list=>{
+      list.sort((a,b)=>a.label.localeCompare(b.label));
+      return { key: sortKeyFn(list), list };
+    });
+    groups.sort((a,b)=> a.key.localeCompare ? a.key.localeCompare(b.key) : a.key-b.key);
+    return groups.flatMap(g=>g.list);
+  }
+
+  const active = groupAndSort(
+    state.entries.filter(e=>isDisplayAlive(e)),
+    list => ownerName(list[0])
+  );
+  const out = groupAndSort(
+    state.entries.filter(e=>!isDisplayAlive(e)),
+    list => -Math.max(...list.map(e=>displayEliminatedWeek(e)||0))
+  );
+  // For eliminated entries, history stops at the week they went out (that week is always
+  // listed, so a missed pick shows as "4:—"); weeks after elimination are left blank.
+  function pickHistory(e, lastWeek){
+    let weeks = Object.keys(e.picks).map(Number);
+    if(lastWeek){
+      weeks = weeks.filter(w=>w<=lastWeek);
+      if(!weeks.includes(lastWeek)) weeks.push(lastWeek);
+    }
+    weeks.sort((a,b)=>a-b);
+    return weeks.map(w=>`${w}:${(e.picks[w] && e.picks[w].survivor)||'—'}`).join('  ');
+  }
+
+  let rows = active.map(e=>{
+    const pendingWeek = pendingBuyBackWeek(e);
+    return `
+    <tr>
+      <td class="name">${ownerName(e)}</td>
+      <td class="muted">${e.label}</td>
+      <td class="muted" style="font-size:12px;">${pickHistory(e)||'—'}</td>
+      <td style="color:var(--accent);font-weight:700;">Alive${pendingWeek?` <span class="muted" style="font-weight:400;font-size:12px;">(buy-back pending, Wk ${pendingWeek})</span>`:''}</td>
+    </tr>`;
+  }).join('');
+  rows += out.map(e=>`
+    <tr class="eliminated-row">
+      <td class="name">${ownerName(e)}</td>
+      <td>${e.label}</td>
+      <td style="font-size:12px;">${pickHistory(e, displayEliminatedWeek(e))||'—'}</td>
+      <td>Out — Week ${displayEliminatedWeek(e)}</td>
+    </tr>`).join('');
+
+  const hsTotals = state.entries.map(e=>{
+    let total = 0, pending = 0;
+    Object.entries(e.picks).forEach(([w,p])=>{
+      if(!p.highscore) return;
+      const wNum = Number(w);
+      if(weekGames(wNum).length===0) return; // no games loaded for that week at all
+      const score = teamScoreInWeek(wNum, p.highscore);
+      if(score!==null) total += score; else pending++;
+    });
+    return { entry: e, owner: ownerName(e), total, pending };
+  }).filter(x=>x.total>0).sort((a,b)=>b.total-a.total);
+  const hsRows = hsTotals.map(x=>`<tr><td>${x.owner}</td><td class="muted">${x.entry.label}</td><td style="color:var(--accent);font-weight:700;">${x.total}${x.pending?` <span class="muted" style="font-weight:400;font-size:12px;">(${x.pending} pending)</span>`:''}</td></tr>`).join('');
+
+  return `
+  <div class="card">
+    <h2 style="margin-top:0;">Season Standings</h2>
+    ${state.entries.length===0 ? '<p class="empty">No entries yet.</p>' : `
+    <table>
+      <thead><tr><th>Owner</th><th>Entry</th><th>Pick history (wk:team)</th><th>Status</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`}
+  </div>
+  <div class="card">
+    <h3 style="margin-top:0;">High Score Challenge</h3>
+    <p class="muted" style="font-size:13px;margin-top:0;">Total points scored by each entry's picked team, added up across the season.</p>
+    ${hsRows ? `<table><thead><tr><th>Owner</th><th>Entry</th><th>Total Points</th></tr></thead><tbody>${hsRows}</tbody></table>` : '<p class="empty">No points yet.</p>'}
+  </div>`;
+}
+
+// ---------- GAMES ----------
+let gamesWeekSelected = null;
+let statsWeekSelected = null;
+function renderGames(){
+  if(gamesWeekSelected===null) gamesWeekSelected = state.meta.currentWeek;
+  const week = gamesWeekSelected;
+  const games = weekGames(week);
+  const weekOptions = Array.from({length:18},(_,i)=>i+1).map(w=>`<option value="${w}" ${w===week?'selected':''}>Week ${w}</option>`).join('');
+
+  const cards = games.map(g=>{
+    const home = TEAM_MAP[g.home], away = TEAM_MAP[g.away];
+    const isFinal = g.status==='final';
+    const homeWin = isFinal && g.homeScore>g.awayScore;
+    const awayWin = isFinal && g.awayScore>g.homeScore;
+    return `
+    <div class="card">
+      <div class="row" style="margin-bottom:8px;">
+        <span class="pill pill-${g.status}">${g.status.toUpperCase()}</span>
+        ${g.startTime ? `<span class="muted" style="font-size:12px;">${new Date(g.startTime).toLocaleString('en-US',{weekday:'short',month:'short',day:'numeric',hour:'numeric',minute:'2-digit',timeZone:'America/New_York'})} ET</span>`:''}
+      </div>
+      <div class="matchup">
+        <div class="team-tile">
+          <div class="tname">${away.name} ${isFinal?`<span class="score ${awayWin?'winner':''}">${g.awayScore}</span>`:''}</div>
+          <div class="trecord">${computeRecord(away.abbr)}</div>
+        </div>
+        <div class="vs">@</div>
+        <div class="team-tile">
+          <div class="tname">${home.name} ${isFinal?`<span class="score ${homeWin?'winner':''}">${g.homeScore}</span>`:''}</div>
+          <div class="trecord">${computeRecord(home.abbr)}</div>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+
+  return `
+  <div class="card">
+    <div class="row">
+      <h2 style="margin:0;">Games</h2>
+      <select id="games-week-select" style="width:auto;">${weekOptions}</select>
+    </div>
+  </div>
+  ${games.length ? cards : '<div class="card"><p class="empty">No games loaded for this week yet.</p></div>'}
+  `;
+}
+
+// ---------- WEEKLY RECAP ----------
+let editingRoundupId = null;
+let confirmingDeleteRoundupId = null;
+function renderRoundUps(){
+  const user = currentUser();
+  const isAdmin = user && user.isAdmin;
+  const posts = (state.roundupPosts || []).slice().sort((a,b)=>b.timestamp-a.timestamp);
+
+  const composer = isAdmin ? `
+    <div class="card">
+      <h3 style="margin-top:0;">Post a recap</h3>
+      <textarea id="roundup-text" rows="6" style="width:100%;background:var(--surface-2);color:var(--text);border:1px solid var(--line);border-radius:4px;padding:10px;font-size:14px;" placeholder="Write this week's recap..."></textarea>
+      <button class="btn" id="post-roundup" style="margin-top:10px;">Post</button>
+    </div>
+  ` : '';
+
+  const feed = posts.length ? posts.map(p=>{
+    const isEditing = editingRoundupId===p.id;
+    const isConfirmingDelete = confirmingDeleteRoundupId===p.id;
+    const adminControls = isAdmin ? (
+      isEditing ? '' : isConfirmingDelete ? `
+        <div style="margin-top:10px;">
+          <span style="color:var(--danger);font-size:13px;margin-right:8px;">Delete this post?</span>
+          <button class="btn-danger" style="border:none;border-radius:4px;padding:8px 12px;font-size:13px;font-weight:600;" data-confirm-delete-roundup="${p.id}">Yes, delete</button>
+          <button class="btn-outline" data-cancel-delete-roundup="${p.id}">Cancel</button>
+        </div>
+      ` : `
+        <div style="margin-top:10px;">
+          <button class="btn-outline" data-edit-roundup="${p.id}">Edit</button>
+          <button class="btn-outline" style="border-color:var(--danger);color:var(--danger);" data-delete-roundup="${p.id}">Delete</button>
+        </div>
+      `
+    ) : '';
+    const body = isEditing ? `
+      <textarea id="edit-roundup-text-${p.id}" rows="6" style="width:100%;background:var(--surface-2);color:var(--text);border:1px solid var(--line);border-radius:4px;padding:10px;font-size:14px;">${p.text}</textarea>
+      <div style="margin-top:10px;">
+        <button class="btn" data-save-roundup="${p.id}">Save</button>
+        <button class="btn-outline" data-cancel-edit-roundup="${p.id}">Cancel</button>
+      </div>
+    ` : `<div style="white-space:pre-wrap;line-height:1.6;">${p.text}</div>`;
+    return `
+    <div class="card">
+      <div class="row" style="margin-bottom:8px;">
+        <span class="pill pill-scheduled">Week ${p.week}</span>
+        <span class="muted" style="font-size:12px;">${new Date(p.timestamp).toLocaleString('en-US',{weekday:'short',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})} · ${p.authorName}</span>
+      </div>
+      ${body}
+      ${adminControls}
+    </div>`;
+  }).join('') : '<div class="card"><p class="empty">No recaps posted yet.</p></div>';
+
+  return `
+  <div class="card card-accent">
+    <h2 style="margin:0;">Weekly Recap</h2>
+  </div>
+  ${composer}
+  ${feed}`;
+}
+
+// ---------- LEAGUE STATS ----------
+function renderLeagueStats(){
+  if(statsWeekSelected===null) statsWeekSelected = state.meta.currentWeek;
+  const totalEntries = state.entries.length;
+  const aliveCount = state.entries.filter(e=>isDisplayAlive(e)).length;
+  const outCount = totalEntries - aliveCount;
+
+  // Pick popularity across the whole season, with win/loss record for each team as a pick.
+  const pickStats = {}; // abbr -> {picks, wins, losses, pending}
+  state.entries.forEach(e=>{
+    Object.entries(e.picks).forEach(([w,p])=>{
+      if(!p.survivor) return;
+      const abbr = p.survivor;
+      if(!pickStats[abbr]) pickStats[abbr] = {picks:0, wins:0, losses:0, pending:0};
+      pickStats[abbr].picks++;
+      const result = gameResultForTeam(Number(w), abbr);
+      if(result==='win' || result==='tie') pickStats[abbr].wins++;
+      else if(result==='loss') pickStats[abbr].losses++;
+      else pickStats[abbr].pending++;
+    });
+  });
+  const totalPicks = Object.values(pickStats).reduce((sum,s)=>sum+s.picks,0);
+  const pickRows = Object.entries(pickStats)
+    .sort((a,b)=>b[1].picks-a[1].picks)
+    .map(([abbr,s])=>{
+      const pct = totalPicks ? ((s.picks/totalPicks)*100).toFixed(1) : '0.0';
+      return `<tr><td>${TEAM_MAP[abbr]?.name||abbr}</td><td style="font-weight:700;">${s.picks}</td><td class="muted">${pct}%</td><td class="muted">${s.wins}-${s.losses}${s.pending?` (${s.pending} pending)`:''}</td></tr>`;
+    })
+    .join('');
+
+  // Eliminations by week (net, i.e. after accounting for buy-back revivals — based on current eliminatedWeek).
+  const elimByWeek = {};
+  state.entries.forEach(e=>{ if(e.eliminated && e.eliminatedWeek){ elimByWeek[e.eliminatedWeek] = (elimByWeek[e.eliminatedWeek]||0)+1; } });
+  const elimWeeks = Object.keys(elimByWeek).map(Number).sort((a,b)=>a-b);
+  const elimRows = elimWeeks.map(w=>{
+    const pct = totalEntries ? ((elimByWeek[w]/totalEntries)*100).toFixed(1) : '0.0';
+    return `<tr><td>Week ${w}</td><td style="font-weight:700;">${elimByWeek[w]}</td><td class="muted">${pct}% of all entries</td></tr>`;
+  }).join('');
+
+  // Pick popularity for a single selected week.
+  const wkPickStats = {}; // abbr -> count
+  state.entries.forEach(e=>{
+    const pick = e.picks[statsWeekSelected] && e.picks[statsWeekSelected].survivor;
+    if(!pick) return;
+    wkPickStats[pick] = (wkPickStats[pick]||0)+1;
+  });
+  const totalWkPicks = Object.values(wkPickStats).reduce((sum,n)=>sum+n,0);
+  const wkWeekOptions = Array.from({length:18},(_,i)=>i+1).map(w=>`<option value="${w}" ${w===statsWeekSelected?'selected':''}>Week ${w}</option>`).join('');
+  const wkPickRows = Object.entries(wkPickStats)
+    .sort((a,b)=>b[1]-a[1])
+    .map(([abbr,count])=>{
+      const pct = totalWkPicks ? ((count/totalWkPicks)*100).toFixed(1) : '0.0';
+      const result = gameResultForTeam(statsWeekSelected, abbr);
+      const resultLabel = result==='win'?'Won':result==='loss'?'Lost':result==='tie'?'Tied':'Pending';
+      return `<tr><td>${TEAM_MAP[abbr]?.name||abbr}</td><td style="font-weight:700;">${count}</td><td class="muted">${pct}%</td><td class="muted">${resultLabel}</td></tr>`;
+    })
+    .join('');
+
+  return `
+  <div class="card card-accent">
+    <h2 style="margin-top:0;">League Stats</h2>
+    <p class="muted" style="margin:0;">${totalEntries} total entries · <strong style="color:var(--accent)">${aliveCount}</strong> alive · <strong style="color:var(--danger)">${outCount}</strong> out</p>
+  </div>
+  <div class="card">
+    <h3 style="margin-top:0;">Pick Popularity (season)</h3>
+    ${pickRows ? `<table><thead><tr><th>Team</th><th>Times Picked</th><th>% of All Picks</th><th>Record when picked</th></tr></thead><tbody>${pickRows}</tbody></table>` : '<p class="empty">No picks recorded yet.</p>'}
+  </div>
+  <div class="card">
+    <div class="row">
+      <h3 style="margin:0;">Pick Popularity by Week</h3>
+      <select id="stats-week-select" style="width:auto;">${wkWeekOptions}</select>
+    </div>
+    <div class="hr"></div>
+    ${wkPickRows ? `<table><thead><tr><th>Team</th><th>Times Picked</th><th>% of Week's Picks</th><th>Result</th></tr></thead><tbody>${wkPickRows}</tbody></table>` : '<p class="empty">No picks recorded for this week yet.</p>'}
+  </div>
+  <div class="card">
+    <h3 style="margin-top:0;">Eliminations by Week</h3>
+    ${elimRows ? `<table><thead><tr><th>Week</th><th>Entries Out</th><th>% of All Entries</th></tr></thead><tbody>${elimRows}</tbody></table>` : '<p class="empty">No eliminations yet.</p>'}
+  </div>`;
+}
+
+// ---------- ACCOUNT ----------
+let authMode = 'login';
+function renderAccount(){
+  const user = currentUser();
+  if(user){
+    const entries = userEntries(user.id);
+    return `
+    <div class="card">
+      <h2 style="margin-top:0;">${user.displayName}</h2>
+      <p class="muted">${user.email}</p>
+      <p class="muted">${user.isAdmin?'Commissioner / Admin':'Player'}</p>
+      <div class="hr"></div>
+      <h3>Your entries</h3>
+      ${entries.length ? `<table><thead><tr><th>Entry</th><th>Status</th></tr></thead><tbody>
+        ${entries.map(e=>`<tr><td>${e.label}</td><td>${isDisplayAlive(e)?'Alive':'Out — Week '+displayEliminatedWeek(e)}</td></tr>`).join('')}
+      </tbody></table>` : '<p class="muted">No entries yet — ask your commissioner to add one.</p>'}
+      <div class="hr"></div>
+      <button class="btn-outline" id="logout-btn">Log out</button>
+    </div>`;
+  }
+  return `
+  <div class="card" style="max-width:400px;">
+    <div class="row" style="margin-bottom:16px;">
+      <button class="btn-outline ${authMode==='login'?'':'muted'}" id="mode-login" style="${authMode==='login'?'border-color:var(--accent);color:var(--accent);':''}">Log in</button>
+      <button class="btn-outline ${authMode==='signup'?'':'muted'}" id="mode-signup" style="${authMode==='signup'?'border-color:var(--accent);color:var(--accent);':''}">Sign up</button>
+    </div>
+    ${authMode==='signup' ? `<div class="field"><label>Email</label><input type="text" id="auth-email" placeholder="you@example.com"></div>` : ''}
+    <div class="field"><label>Display name</label><input type="text" id="auth-display" placeholder="e.g. Jane Smith"></div>
+    <div class="field"><label>Password</label><input type="password" id="auth-password"></div>
+    <button class="btn" id="auth-submit">${authMode==='login'?'Log in':'Create account'}</button>
+    <p class="muted" style="font-size:12px;margin-top:12px;">Passwords are stored for this league's use only — please don't reuse a sensitive password. Your display name is what you'll log in with, so make sure it's unique in the league.</p>
+  </div>`;
+}
+
+// ---------- ADMIN ----------
+let adminWeek = null;
+let stagedGames = null;
+let confirmingRemoveUserId = null;
+let correctPickUserId = null;
+let correctPickEntryId = null;
+let correctPickWeek = null;
+function renderAdmin(){
+  const user = currentUser();
+  if(!user || !user.isAdmin) return `<div class="card"><p>Admins only.</p></div>`;
+  if(adminWeek===null) adminWeek = state.meta.currentWeek;
+  const week = adminWeek;
+  const weekOptions = Array.from({length:18},(_,i)=>i+1).map(w=>`<option value="${w}" ${w===week?'selected':''}>Week ${w}</option>`).join('');
+  const games = weekGames(week);
+  const teamOptions = TEAMS_AZ.map(t=>`<option value="${t[0]}">${t[1]}</option>`).join('');
+
+  const staged = stagedGames ? `
+    <div class="hr"></div>
+    <p class="muted">Fetched ${stagedGames.length} games from ESPN. Review, then save.</p>
+    ${stagedGames.map((g,i)=>`<div class="row" style="margin-bottom:6px;"><span>${g.away} @ ${g.home}</span><span class="muted">${g.status}${g.status==='final'?` (${g.awayScore}-${g.homeScore})`:''}</span></div>`).join('')}
+    <button class="btn" id="confirm-staged">Save these to Week ${week}</button>
+    <button class="btn-outline" id="discard-staged">Discard</button>
+  ` : '';
+
+  const gameRows = games.map((g,i)=>`
+    <tr>
+      <td>${g.away} @ ${g.home}</td>
+      <td><select data-gidx="${i}" class="status-select" style="width:auto;">
+        <option value="scheduled" ${g.status==='scheduled'?'selected':''}>Scheduled</option>
+        <option value="live" ${g.status==='live'?'selected':''}>Live</option>
+        <option value="final" ${g.status==='final'?'selected':''}>Final</option>
+      </select></td>
+      <td><input type="number" data-gidx="${i}" class="away-score" value="${g.awayScore??''}" style="width:60px;"></td>
+      <td><input type="number" data-gidx="${i}" class="home-score" value="${g.homeScore??''}" style="width:60px;"></td>
+      <td><button class="btn-outline" data-remove="${i}">Remove</button></td>
+    </tr>`).join('');
+
+  // Correct a Pick tool
+  const sortedUsers = [...state.users].sort((a,b)=>a.displayName.localeCompare(b.displayName));
+  if(!correctPickUserId && sortedUsers.length) correctPickUserId = sortedUsers[0].id;
+  const cpEntries = userEntries(correctPickUserId);
+  if(!correctPickEntryId || !cpEntries.find(e=>e.id===correctPickEntryId)) correctPickEntryId = cpEntries[0] ? cpEntries[0].id : null;
+  if(!correctPickWeek) correctPickWeek = adminWeek;
+  const cpEntry = state.entries.find(e=>e.id===correctPickEntryId);
+  const cpExisting = (cpEntry && cpEntry.picks[correctPickWeek]) || {};
+  const cpUserOptions = sortedUsers.map(u=>`<option value="${u.id}" ${u.id===correctPickUserId?'selected':''}>${u.displayName}</option>`).join('');
+  const cpEntryOptions = cpEntries.map(e=>`<option value="${e.id}" ${e.id===correctPickEntryId?'selected':''}>${e.label}${e.eliminated?' [out wk '+e.eliminatedWeek+']':''}</option>`).join('');
+  const cpWeekOptions = Array.from({length:18},(_,i)=>i+1).map(w=>`<option value="${w}" ${w===correctPickWeek?'selected':''}>Week ${w}</option>`).join('');
+  const cpTeamOptions = (selected) => `<option value="">No pick</option>` + TEAMS_AZ.map(t=>`<option value="${t[0]}" ${selected===t[0]?'selected':''}>${t[1]}</option>`).join('');
+  const correctPickBlock = sortedUsers.length ? `
+    <div class="grid" style="grid-template-columns:1fr 1fr;">
+      <div class="field"><label>Owner</label><select id="cp-user-select">${cpUserOptions}</select></div>
+      <div class="field"><label>Entry</label><select id="cp-entry-select">${cpEntryOptions}</select></div>
+    </div>
+    <div class="field"><label>Week</label><select id="cp-week-select" style="width:auto;">${cpWeekOptions}</select></div>
+    <div class="grid" style="grid-template-columns:1fr 1fr;">
+      <div class="field"><label>Survivor pick</label><select id="cp-survivor-select">${cpTeamOptions(cpExisting.survivor)}</select></div>
+      <div class="field"><label>High Score pick</label><select id="cp-highscore-select">${cpTeamOptions(cpExisting.highscore)}</select></div>
+    </div>
+    <button class="btn" id="cp-save">Save Correction</button>
+  ` : '<p class="empty">No users yet.</p>';
+
+  const usersList = state.users.map(u=>{
+    const ents = userEntries(u.id);
+    const isConfirming = confirmingRemoveUserId===u.id;
+    return `<div class="row" style="padding:8px 0;border-bottom:1px solid var(--line);">
+      <div><strong>${u.displayName}</strong> <span class="muted">(${u.email}) ${u.isAdmin?'· admin':''}</span><br>
+      <span class="muted" style="font-size:12px;">${ents.map(e=>e.label+(e.eliminated?' [out]':'')).join(', ')||'no entries'}</span></div>
+      <div>
+        ${isConfirming ? `
+          <span style="color:var(--danger);font-size:13px;margin-right:8px;">Remove ${u.displayName} and ${ents.length} entr${ents.length===1?'y':'ies'}?</span>
+          <button class="btn-danger" style="border:none;border-radius:4px;padding:9px 14px;font-size:13px;font-weight:600;" data-confirm-remove-user="${u.id}">Yes, remove</button>
+          <button class="btn-outline" data-cancel-remove-user="${u.id}">Cancel</button>
+        ` : `
+          <button class="btn-outline" data-add-entry="${u.id}">Add entry</button> ${!u.isAdmin?`<button class="btn-outline" data-make-admin="${u.id}">Make Admin</button>`:''} <button class="btn-outline" data-remove-user="${u.id}" style="border-color:var(--danger);color:var(--danger);">Remove User</button>
+        `}
+      </div>
+    </div>`;
+  }).join('');
+
+  const openDayOptions = DAY_NAMES.map((n,i)=>`<option value="${i}" ${i===(state.meta.openDay??1)?'selected':''}>${n}</option>`).join('');
+  const curOpenH = state.meta.openHour ?? 0;
+  const curOpenM = state.meta.openMinute ?? 0;
+  const openTimeVal = `${String(curOpenH).padStart(2,'0')}:${String(curOpenM).padStart(2,'0')}`;
+
+  const dayOptions = DAY_NAMES.map((n,i)=>`<option value="${i}" ${i===(state.meta.deadlineDay??3)?'selected':''}>${n}</option>`).join('');
+  const curDeadlineH = state.meta.deadlineHour ?? 23;
+  const curDeadlineM = state.meta.deadlineMinute ?? 59;
+  const deadlineTimeVal = `${String(curDeadlineH).padStart(2,'0')}:${String(curDeadlineM).padStart(2,'0')}`;
+
+  return `
+  <div class="card">
+    <h2 style="margin-top:0;">Admin — Pick Window</h2>
+    <p class="muted" style="font-size:13px;">Picks can only be submitted between these two points each week (Eastern Time). The countdown banner and label update automatically once saved, and the Make Picks page enforces this for real — not just as a display.</p>
+    <h3 style="margin-bottom:6px;">Opens</h3>
+    <div class="grid" style="grid-template-columns:1fr 1fr;">
+      <div class="field"><label>Day of week</label><select id="open-day-select">${openDayOptions}</select></div>
+      <div class="field"><label>Time (ET)</label><input type="time" id="open-time-input" value="${openTimeVal}"></div>
+    </div>
+    <h3 style="margin-bottom:6px;">Closes</h3>
+    <div class="grid" style="grid-template-columns:1fr 1fr;">
+      <div class="field"><label>Day of week</label><select id="deadline-day-select">${dayOptions}</select></div>
+      <div class="field"><label>Time (ET)</label><input type="time" id="deadline-time-input" value="${deadlineTimeVal}"></div>
+    </div>
+    <button class="btn" id="save-deadline">Save Pick Window</button>
+  </div>
+  <div class="card">
+    <h2 style="margin-top:0;">Admin — Games</h2>
+    <div class="row"><div></div><select id="admin-week-select" style="width:auto;">${weekOptions}</select></div>
+    <div class="hr"></div>
+    <button class="btn-outline" id="fetch-espn">Fetch Week ${week} from ESPN</button>
+    <button class="btn-outline" id="load-schedule">Load full season schedule</button>
+    ${staged}
+    <div class="hr"></div>
+    <h3>Paste results (from Claude)</h3>
+    <p class="muted" style="font-size:13px;">If the automatic fetch doesn't work, ask Claude to pull this week's scores and paste the JSON it gives you here. It'll be staged for review below, just like a successful fetch.</p>
+    <textarea id="paste-results-json" rows="6" style="width:100%;background:var(--surface-2);color:var(--text);border:1px solid var(--line);border-radius:4px;padding:10px;font-family:monospace;font-size:12px;" placeholder='[{"id":"...", "week":${week}, "away":"NE", "home":"SEA", "awayScore":10, "homeScore":13, "status":"final", "startTime":"..."}, ...]'></textarea>
+    <button class="btn-outline" id="paste-results-btn" style="margin-top:10px;">Stage Pasted Results</button>
+    <div class="hr"></div>
+    ${gameRows ? `<table><thead><tr><th>Matchup</th><th>Status</th><th>Away</th><th>Home</th><th></th></tr></thead><tbody>${gameRows}</tbody></table>
+      <button class="btn" id="save-score-edits" style="margin-top:10px;">Save score edits</button>` : '<p class="muted">No games yet for this week.</p>'}
+    <div class="hr"></div>
+    <h3>Add game manually</h3>
+    <div class="grid" style="grid-template-columns:1fr 1fr;">
+      <div class="field"><label>Away team</label><select id="manual-away">${teamOptions}</select></div>
+      <div class="field"><label>Home team</label><select id="manual-home">${teamOptions}</select></div>
+    </div>
+    <button class="btn-outline" id="add-manual-game">Add Game</button>
+    <div class="hr"></div>
+    <div class="row">
+      <div>
+        <strong>Process Week ${week}</strong>
+        <p class="muted" style="margin:4px 0 0;font-size:13px;">Eliminates any active entry whose survivor pick lost (or who didn't pick). Run this after all Week ${week} games are marked Final.
+        ${week<=BUY_BACK_CUTOFF_WEEK ? ` Buy-back is open through Week ${BUY_BACK_CUTOFF_WEEK}: an already-eliminated entry with a winning pick this week is automatically revived.` : ` Buy-back has closed (it only applied through Week ${BUY_BACK_CUTOFF_WEEK}) — eliminations from here on are final.`}</p>
+      </div>
+      <button class="btn" id="process-week">Process Week ${week}</button>
+    </div>
+    <div class="hr"></div>
+    <div class="row">
+      <span>Current league week: <strong>${state.meta.currentWeek}</strong></span>
+      <button class="btn-outline" id="advance-week">Advance to Week ${state.meta.currentWeek+1}</button>
+    </div>
+  </div>
+  <div class="card">
+    <h2 style="margin-top:0;">Admin — Correct a Pick</h2>
+    <p class="muted" style="font-size:13px;">Fix a single entry's pick for any week. Saving automatically re-checks that entry's alive/eliminated status from Week 1 forward, so a corrected pick can revive or eliminate them as appropriate.</p>
+    ${correctPickBlock}
+  </div>
+  <div class="card">
+    <h2 style="margin-top:0;">Admin — Users &amp; Entries</h2>
+    ${usersList || '<p class="empty">No users yet.</p>'}
+    <div class="hr"></div>
+    <button class="btn-outline" id="export-emails">Export all emails</button>
+    <div id="email-export-box"></div>
+  </div>
+  <div class="card">
+    <h3 style="margin-top:0;">Import roster &amp; Week ${week} picks</h3>
+    <p class="muted" style="font-size:13px;">Paste rows of <code>Name&nbsp;&nbsp;Team</code> (tab, or comma, separated — pasting straight from a spreadsheet works). If a person has multiple entries, add a number at the end of their name for each row (e.g. "Alex Wynn 1", "Alex Wynn 2") — those will be grouped under one login with an entry each. People with no number get a single "Entry 1". New people get an account with a placeholder email and a temporary password matching their name; existing people (matched by name) just get this week's pick recorded on the right entry.</p>
+    <div class="field"><label>Pick type</label>
+      <select id="roster-import-type">
+        <option value="survivor">Survivor pick (team to win)</option>
+        <option value="highscore">High Score side game (team to score the most)</option>
+      </select>
+    </div>
+    <textarea id="roster-csv" rows="10" style="width:100%;background:var(--surface-2);color:var(--text);border:1px solid var(--line);border-radius:4px;padding:10px;font-family:monospace;font-size:13px;" placeholder="Adam Consiglio	LA CHARGERS
+Alex Wynn 1	JACKSONVILLE
+Alex Wynn 2	CHICAGO"></textarea>
+    <button class="btn" id="roster-import" style="margin-top:10px;">Import for Week ${week}</button>
+  </div>
+  <div class="card">
+    <h3 style="margin-top:0;">Bulk add users from CSV</h3>
+    <p class="muted" style="font-size:13px;">Paste rows below, one person per line. Include an email address on each line (required) and, optionally, a display name. Everyone's temporary password will be set to match their display name — tell them to log in with that and change nothing else for now.</p>
+    <p class="muted" style="font-size:12px;">Examples that all work: <code>Jane Smith, jane@email.com</code> &nbsp;or&nbsp; <code>jane@email.com, Jane Smith</code></p>
+    <textarea id="bulk-csv" rows="8" style="width:100%;background:var(--surface-2);color:var(--text);border:1px solid var(--line);border-radius:4px;padding:10px;font-family:monospace;font-size:13px;" placeholder="Jane Smith, jane@email.com
+John Doe, john@email.com"></textarea>
+    <button class="btn" id="bulk-import" style="margin-top:10px;">Import Users</button>
+  </div>`;
+}
+
+// ---------- event handlers ----------
+function attachHandlers(){
+  document.querySelectorAll('[data-nav]').forEach(el=>el.addEventListener('click', (e)=>{ e.preventDefault(); setTab(el.dataset.nav); }));
+
+  // Picks tab
+  const entrySelect = document.getElementById('entry-select');
+  if(entrySelect) entrySelect.addEventListener('change', ()=>{ pickEntryId = entrySelect.value; render(); });
+  const savePicksBtn = document.getElementById('save-picks');
+  if(savePicksBtn) savePicksBtn.addEventListener('click', async ()=>{
+    if(!isPickWindowOpen()){ showMsg('error','Picks are closed right now.'); render(); return; }
+    const user = currentUser();
+    const entry = state.entries.find(e=>e.id===pickEntryId);
+    const week = state.meta.currentWeek;
+    const survivorEl = document.getElementById('survivor-select');
+    const hsEl = document.getElementById('highscore-select');
+    if(!entry.picks[week]) entry.picks[week] = {};
+    if(survivorEl){
+      if(!survivorEl.value){ showMsg('error','Pick a team to win before saving.'); return; }
+      entry.picks[week].survivor = survivorEl.value;
+    }
+    if(hsEl) entry.picks[week].highscore = hsEl.value;
+    await saveState();
+    showMsg('ok','Picks saved.');
+  });
+
+  // Games tab
+  const gwSel = document.getElementById('games-week-select');
+  if(gwSel) gwSel.addEventListener('change', ()=>{ gamesWeekSelected = Number(gwSel.value); render(); });
+
+  // League Stats tab
+  const statsWkSel = document.getElementById('stats-week-select');
+  if(statsWkSel) statsWkSel.addEventListener('change', ()=>{ statsWeekSelected = Number(statsWkSel.value); render(); });
+
+  // Weekly Recap tab
+  const postRoundupBtn = document.getElementById('post-roundup');
+  if(postRoundupBtn) postRoundupBtn.addEventListener('click', async ()=>{
+    const textEl = document.getElementById('roundup-text');
+    const text = textEl.value.trim();
+    if(!text){ showMsg('error','Write something before posting.'); return; }
+    const user = currentUser();
+    if(!state.roundupPosts) state.roundupPosts = [];
+    state.roundupPosts.push({
+      id: uid('rp'), week: state.meta.currentWeek, authorName: user.displayName,
+      timestamp: Date.now(), text
+    });
+    await saveState();
+    showMsg('ok','Recap posted.');
+  });
+  document.querySelectorAll('[data-edit-roundup]').forEach(btn=>btn.addEventListener('click', ()=>{
+    editingRoundupId = btn.dataset.editRoundup;
+    confirmingDeleteRoundupId = null;
+    render();
+  }));
+  document.querySelectorAll('[data-cancel-edit-roundup]').forEach(btn=>btn.addEventListener('click', ()=>{
+    editingRoundupId = null;
+    render();
+  }));
+  document.querySelectorAll('[data-save-roundup]').forEach(btn=>btn.addEventListener('click', async ()=>{
+    const postId = btn.dataset.saveRoundup;
+    const newText = document.getElementById('edit-roundup-text-'+postId).value.trim();
+    if(!newText){ showMsg('error','Recap text can\'t be empty.'); return; }
+    const post = state.roundupPosts.find(p=>p.id===postId);
+    if(post) post.text = newText;
+    editingRoundupId = null;
+    await saveState();
+    showMsg('ok','Recap updated.');
+  }));
+  document.querySelectorAll('[data-delete-roundup]').forEach(btn=>btn.addEventListener('click', ()=>{
+    confirmingDeleteRoundupId = btn.dataset.deleteRoundup;
+    render();
+  }));
+  document.querySelectorAll('[data-cancel-delete-roundup]').forEach(btn=>btn.addEventListener('click', ()=>{
+    confirmingDeleteRoundupId = null;
+    render();
+  }));
+  document.querySelectorAll('[data-confirm-delete-roundup]').forEach(btn=>btn.addEventListener('click', async ()=>{
+    const postId = btn.dataset.confirmDeleteRoundup;
+    state.roundupPosts = state.roundupPosts.filter(p=>p.id!==postId);
+    confirmingDeleteRoundupId = null;
+    await saveState();
+    showMsg('ok','Recap deleted.');
+  }));
+
+  // Account tab
+  const modeLogin = document.getElementById('mode-login');
+  if(modeLogin) modeLogin.addEventListener('click', ()=>{ authMode='login'; render(); });
+  const modeSignup = document.getElementById('mode-signup');
+  if(modeSignup) modeSignup.addEventListener('click', ()=>{ authMode='signup'; render(); });
+  const authSubmit = document.getElementById('auth-submit');
+  if(authSubmit) authSubmit.addEventListener('click', async ()=>{
+    const displayName = document.getElementById('auth-display').value.trim();
+    const password = document.getElementById('auth-password').value;
+    if(!displayName || !password){ showMsg('error','Enter a display name and password.'); return; }
+    if(authMode==='signup'){
+      const email = document.getElementById('auth-email').value.trim();
+      if(!email || !email.includes('@')){ showMsg('error','Enter a valid email address.'); return; }
+      if(state.users.find(u=>u.displayName.toLowerCase()===displayName.toLowerCase())){ showMsg('error','That display name is already taken — try adding a last initial.'); return; }
+      const isFirstUser = state.users.length===0;
+      const newUser = { id: uid('u'), password, displayName, email, isAdmin: isFirstUser };
+      state.users.push(newUser);
+      const entry = { id: uid('e'), userId: newUser.id, label: 'Entry 1', eliminated:false, eliminatedWeek:null, picks:{} };
+      state.entries.push(entry);
+      await saveState();
+      session.userId = newUser.id; await saveSession();
+      showMsg('ok', isFirstUser ? 'Account created! You are the first user, so you\'re the admin.' : 'Account created!');
+    } else {
+      const u = state.users.find(u=>u.displayName.toLowerCase()===displayName.toLowerCase() && u.password===password);
+      if(!u){ showMsg('error','Incorrect display name or password.'); return; }
+      session.userId = u.id; await saveSession();
+      showMsg('ok','Welcome back, '+u.displayName+'.');
+    }
+    activeTab = 'home';
+    render();
+  });
+  const logoutBtn = document.getElementById('logout-btn');
+  if(logoutBtn) logoutBtn.addEventListener('click', async ()=>{ session.userId = null; await saveSession(); activeTab='home'; render(); });
+
+  // Admin tab
+  const saveDeadlineBtn = document.getElementById('save-deadline');
+  if(saveDeadlineBtn) saveDeadlineBtn.addEventListener('click', async ()=>{
+    const openDaySelectEl = document.getElementById('open-day-select');
+    const closeDaySelectEl = document.getElementById('deadline-day-select');
+    const openDay = Number(openDaySelectEl.value);
+    const openTimeVal = document.getElementById('open-time-input').value;
+    const closeDay = Number(closeDaySelectEl.value);
+    const closeTimeVal = document.getElementById('deadline-time-input').value;
+    if(!openTimeVal || !closeTimeVal){ showMsg('error','Pick both an open and close time.'); return; }
+    const [oh,om] = openTimeVal.split(':').map(Number);
+    const [ch,cm] = closeTimeVal.split(':').map(Number);
+    state.meta.openDay = openDay;
+    state.meta.openHour = oh;
+    state.meta.openMinute = om;
+    state.meta.deadlineDay = closeDay;
+    state.meta.deadlineHour = ch;
+    state.meta.deadlineMinute = cm;
+    await saveState();
+    updateDeadlineLabel();
+    showMsg('ok', `Pick window updated: opens ${DAY_NAMES[openDay]} ${formatClock(oh,om)} ET, closes ${DAY_NAMES[closeDay]} ${formatClock(ch,cm)} ET.`);
+  });
+  const awSel = document.getElementById('admin-week-select');
+  if(awSel) awSel.addEventListener('change', ()=>{ adminWeek = Number(awSel.value); stagedGames=null; render(); });
+  const fetchBtn = document.getElementById('fetch-espn');
+  if(fetchBtn) fetchBtn.addEventListener('click', async ()=>{
+    fetchBtn.textContent = 'Fetching...';
+    const result = await fetchWeekFromESPN(adminWeek);
+    if(result===null || result.length===0){
+      showMsg('error','Could not reach ESPN\'s data automatically. Try "Load full season schedule" instead, or add games manually below.');
+    } else {
+      stagedGames = result;
+      render();
+    }
+  });
+  const pasteResultsBtn = document.getElementById('paste-results-btn');
+  if(pasteResultsBtn) pasteResultsBtn.addEventListener('click', ()=>{
+    const raw = document.getElementById('paste-results-json').value.trim();
+    if(!raw){ showMsg('error','Paste the JSON Claude gave you first.'); return; }
+    try{
+      const parsed = JSON.parse(raw);
+      if(!Array.isArray(parsed) || parsed.length===0) throw new Error('not a non-empty array');
+      const normalized = parsed.map(g=>({
+        id: g.id || uid('g'),
+        week: Number(adminWeek),
+        home: g.home, away: g.away,
+        homeScore: g.homeScore ?? null, awayScore: g.awayScore ?? null,
+        status: g.status || 'scheduled',
+        startTime: g.startTime ?? null
+      }));
+      stagedGames = normalized;
+      showMsg('ok', `Staged ${normalized.length} game(s) for review below.`);
+    }catch(e){
+      showMsg('error','That doesn\'t look like valid JSON — paste exactly what Claude gave you, including the [ ] brackets.');
+    }
+  });
+  const loadScheduleBtn = document.getElementById('load-schedule');
+  if(loadScheduleBtn) loadScheduleBtn.addEventListener('click', async ()=>{
+    let filled = 0;
+    for(let w=1; w<=18; w++){
+      if(!state.games[w] || state.games[w].length===0){
+        state.games[w] = buildScheduleGames(w);
+        filled++;
+      }
+    }
+    await saveState();
+    showMsg('ok', filled>0 ? `Loaded matchups for ${filled} week(s). Weeks that already had games were left as-is.` : 'All weeks already have games loaded.');
+  });
+  const confirmStaged = document.getElementById('confirm-staged');
+  if(confirmStaged) confirmStaged.addEventListener('click', async ()=>{
+    const existing = state.games[adminWeek] || [];
+    const merged = [...existing];
+    stagedGames.forEach(sg=>{
+      const idx = merged.findIndex(g=>g.home===sg.home && g.away===sg.away);
+      if(idx>=0) merged[idx] = { ...merged[idx], ...sg, id: merged[idx].id };
+      else merged.push(sg);
+    });
+    state.games[adminWeek] = merged;
+    stagedGames = null;
+    await saveState();
+    showMsg('ok','Week '+adminWeek+' games saved.');
+  });
+  const discardStaged = document.getElementById('discard-staged');
+  if(discardStaged) discardStaged.addEventListener('click', ()=>{ stagedGames=null; render(); });
+  const addManual = document.getElementById('add-manual-game');
+  if(addManual) addManual.addEventListener('click', async ()=>{
+    const away = document.getElementById('manual-away').value;
+    const home = document.getElementById('manual-home').value;
+    if(away===home){ showMsg('error','Home and away team must differ.'); return; }
+    if(!state.games[adminWeek]) state.games[adminWeek] = [];
+    state.games[adminWeek].push({ id: uid('g'), week: adminWeek, home, away, homeScore:null, awayScore:null, status:'scheduled', startTime:null });
+    await saveState();
+    showMsg('ok','Game added.');
+  });
+  const saveScoreEdits = document.getElementById('save-score-edits');
+  if(saveScoreEdits) saveScoreEdits.addEventListener('click', async ()=>{
+    const list = state.games[adminWeek];
+    document.querySelectorAll('.status-select').forEach(el=>{ list[Number(el.dataset.gidx)].status = el.value; });
+    document.querySelectorAll('.away-score').forEach(el=>{ list[Number(el.dataset.gidx)].awayScore = el.value===''?null:parseInt(el.value); });
+    document.querySelectorAll('.home-score').forEach(el=>{ list[Number(el.dataset.gidx)].homeScore = el.value===''?null:parseInt(el.value); });
+    await saveState();
+    showMsg('ok','Scores updated.');
+  });
+  document.querySelectorAll('[data-remove]').forEach(btn=>btn.addEventListener('click', async ()=>{
+    const idx = Number(btn.dataset.remove);
+    state.games[adminWeek].splice(idx,1);
+    await saveState();
+    showMsg('ok','Game removed.');
+  }));
+  const cpUserSel = document.getElementById('cp-user-select');
+  if(cpUserSel) cpUserSel.addEventListener('change', ()=>{ correctPickUserId = cpUserSel.value; correctPickEntryId = null; render(); });
+  const cpEntrySel = document.getElementById('cp-entry-select');
+  if(cpEntrySel) cpEntrySel.addEventListener('change', ()=>{ correctPickEntryId = cpEntrySel.value; render(); });
+  const cpWeekSel = document.getElementById('cp-week-select');
+  if(cpWeekSel) cpWeekSel.addEventListener('change', ()=>{ correctPickWeek = Number(cpWeekSel.value); render(); });
+  const cpSaveBtn = document.getElementById('cp-save');
+  if(cpSaveBtn) cpSaveBtn.addEventListener('click', async ()=>{
+    const entry = state.entries.find(e=>e.id===correctPickEntryId);
+    if(!entry) return;
+    const survivorVal = document.getElementById('cp-survivor-select').value;
+    const highscoreVal = document.getElementById('cp-highscore-select').value;
+    if(!entry.picks[correctPickWeek]) entry.picks[correctPickWeek] = {};
+    if(survivorVal) entry.picks[correctPickWeek].survivor = survivorVal;
+    else delete entry.picks[correctPickWeek].survivor;
+    if(highscoreVal) entry.picks[correctPickWeek].highscore = highscoreVal;
+    else delete entry.picks[correctPickWeek].highscore;
+    if(Object.keys(entry.picks[correctPickWeek]).length===0) delete entry.picks[correctPickWeek];
+    const wasEliminated = entry.eliminated;
+    recalculateEntryStatus(entry);
+    await saveState();
+    const statusNote = wasEliminated!==entry.eliminated ? ` Status changed to ${entry.eliminated?'eliminated':'alive'}.` : '';
+    showMsg('ok', `Pick corrected for Week ${correctPickWeek}.${statusNote}`);
+  });
+  const processWeek = document.getElementById('process-week');
+  if(processWeek) processWeek.addEventListener('click', async ()=>{
+    const week = adminWeek;
+    const withinBuyBackWindow = week <= BUY_BACK_CUTOFF_WEEK;
+    let eliminatedCount = 0, revivedCount = 0;
+    state.entries.forEach(entry=>{
+      const wasOut = entry.eliminated;
+      // Once buy-back closes, an already-eliminated entry can't come back — skip entirely.
+      if(wasOut && !withinBuyBackWindow) return;
+      const pick = entry.picks[week];
+      if(!pick || !pick.survivor){
+        // No pick this week: newly-eliminated entries lock in; already-out entries just
+        // stay out under their original elimination week (they simply didn't buy back).
+        if(!wasOut){ entry.eliminated = true; entry.eliminatedWeek = week; eliminatedCount++; }
+        return;
+      }
+      const result = gameResultForTeam(week, pick.survivor);
+      if(result==='loss'){
+        entry.eliminated = true; entry.eliminatedWeek = week;
+        if(!wasOut) eliminatedCount++;
+      } else if(result==='win' || result==='tie'){
+        if(wasOut){ entry.eliminated = false; entry.eliminatedWeek = null; revivedCount++; }
+      }
+      // result === null means the game isn't final yet — leave status as-is.
+    });
+    await saveState();
+    showMsg('ok', `Week ${week} processed. ${eliminatedCount} entr${eliminatedCount===1?'y':'ies'} eliminated.${revivedCount?` ${revivedCount} entr${revivedCount===1?'y':'ies'} bought back in.`:''}`);
+  });
+  const advanceWeek = document.getElementById('advance-week');
+  if(advanceWeek) advanceWeek.addEventListener('click', async ()=>{
+    state.meta.currentWeek += 1;
+    adminWeek = state.meta.currentWeek;
+    stagedGames = null;
+    await saveState();
+    showMsg('ok','Advanced to Week '+state.meta.currentWeek+'.');
+  });
+  document.querySelectorAll('[data-add-entry]').forEach(btn=>btn.addEventListener('click', async ()=>{
+    const userId = btn.dataset.addEntry;
+    const count = userEntries(userId).length;
+    state.entries.push({ id: uid('e'), userId, label: 'Entry '+(count+1), eliminated:false, eliminatedWeek:null, picks:{} });
+    await saveState();
+    showMsg('ok','Entry added.');
+  }));
+  document.querySelectorAll('[data-make-admin]').forEach(btn=>btn.addEventListener('click', async ()=>{
+    const userId = btn.dataset.makeAdmin;
+    const user = state.users.find(u=>u.id===userId);
+    if(user){
+      user.isAdmin = true;
+      await saveState();
+      showMsg('ok', `${user.displayName} is now an admin.`);
+    }
+  }));
+  document.querySelectorAll('[data-remove-user]').forEach(btn=>btn.addEventListener('click', ()=>{
+    confirmingRemoveUserId = btn.dataset.removeUser;
+    render();
+  }));
+  document.querySelectorAll('[data-cancel-remove-user]').forEach(btn=>btn.addEventListener('click', ()=>{
+    confirmingRemoveUserId = null;
+    render();
+  }));
+  document.querySelectorAll('[data-confirm-remove-user]').forEach(btn=>btn.addEventListener('click', async ()=>{
+    const userId = btn.dataset.confirmRemoveUser;
+    const user = state.users.find(u=>u.id===userId);
+    if(!user) return;
+    state.users = state.users.filter(u=>u.id!==userId);
+    state.entries = state.entries.filter(e=>e.userId!==userId);
+    confirmingRemoveUserId = null;
+    if(session.userId===userId){ session.userId = null; await saveSession(); activeTab = 'home'; }
+    await saveState();
+    showMsg('ok', `${user.displayName} removed.`);
+  }));
+  const rosterImportBtn = document.getElementById('roster-import');
+  if(rosterImportBtn) rosterImportBtn.addEventListener('click', async ()=>{
+    const week = adminWeek;
+    const pickType = document.getElementById('roster-import-type').value; // 'survivor' or 'highscore'
+    const raw = document.getElementById('roster-csv').value;
+    const lines = raw.split('\n').map(l=>l.trim()).filter(Boolean);
+    let usersCreated = 0, entriesCreated = 0, picksSet = 0, skipped = [], reusedTeamWarnings = [];
+
+    for(const line of lines){
+      // Split on tab first, then fall back to comma, then 2+ spaces.
+      let parts = line.split('\t').map(s=>s.trim()).filter(Boolean);
+      if(parts.length<2) parts = line.split(',').map(s=>s.trim()).filter(Boolean);
+      if(parts.length<2) parts = line.split(/\s{2,}/).map(s=>s.trim()).filter(Boolean);
+      if(parts.length<2){ skipped.push(line); continue; }
+      const namePart = parts[0];
+      const teamPart = parts[parts.length-1];
+      if(/^entry( name)?$/i.test(namePart)) continue; // header row
+
+      const teamAbbr = resolveTeamName(teamPart);
+      if(!teamAbbr){ skipped.push(line); continue; }
+
+      const m = namePart.match(/^(.*\S)\s+(\d+)$/);
+      const baseName = m ? m[1] : namePart;
+      const entryNum = m ? parseInt(m[2]) : 1;
+
+      let user = state.users.find(u=>u.displayName.toLowerCase()===baseName.toLowerCase());
+      if(!user){
+        const placeholderEmail = baseName.toLowerCase().replace(/[^a-z0-9]+/g,'.').replace(/(^\.|\.$)/g,'') + '@placeholder.local';
+        user = { id: uid('u'), displayName: baseName, password: baseName, email: placeholderEmail, isAdmin: false };
+        state.users.push(user);
+        usersCreated++;
+      }
+      const label = 'Entry ' + entryNum;
+      let entry = state.entries.find(e=>e.userId===user.id && e.label===label);
+      if(!entry){
+        entry = { id: uid('e'), userId: user.id, label, eliminated:false, eliminatedWeek:null, picks:{} };
+        state.entries.push(entry);
+        entriesCreated++;
+      }
+      if(!entry.picks[week]) entry.picks[week] = {};
+
+      if(pickType==='survivor'){
+        const usedBefore = Object.entries(entry.picks).filter(([w])=>Number(w)!==week).map(([,p])=>p.survivor);
+        if(usedBefore.includes(teamAbbr)) reusedTeamWarnings.push(`${baseName} (${label}) — ${teamAbbr} already used in a prior week`);
+        entry.picks[week].survivor = teamAbbr;
+      } else {
+        entry.picks[week].highscore = teamAbbr;
+      }
+      picksSet++;
+    }
+
+    await saveState();
+    const typeLabel = pickType==='survivor' ? 'Survivor' : 'High Score';
+    let msg = `Imported (${typeLabel}): ${usersCreated} new user(s), ${entriesCreated} new entr${entriesCreated===1?'y':'ies'}, ${picksSet} pick(s) set for Week ${week}.`;
+    if(skipped.length) msg += ` ${skipped.length} row(s) could not be parsed (unresolved team name or format).`;
+    if(reusedTeamWarnings.length) msg += ` ${reusedTeamWarnings.length} pick(s) repeat a team used in an earlier week — check the standings pick history.`;
+    showMsg(skipped.length ? 'error' : 'ok', msg);
+    if(skipped.length) console.warn('Unparsed roster rows:', skipped);
+  });
+  const exportEmailsBtn = document.getElementById('export-emails');
+  if(exportEmailsBtn) exportEmailsBtn.addEventListener('click', ()=>{
+    const box = document.getElementById('email-export-box');
+    const emails = state.users.map(u=>u.email).filter(Boolean).join(', ');
+    box.innerHTML = `<textarea readonly rows="4" style="width:100%;margin-top:10px;background:var(--surface-2);color:var(--text);border:1px solid var(--line);border-radius:4px;padding:10px;font-size:13px;">${emails}</textarea>`;
+  });
+  const bulkImportBtn = document.getElementById('bulk-import');
+  if(bulkImportBtn) bulkImportBtn.addEventListener('click', async ()=>{
+    const raw = document.getElementById('bulk-csv').value;
+    const lines = raw.split('\n').map(l=>l.trim()).filter(Boolean);
+    let added = 0, skipped = 0;
+    const existingNames = new Set(state.users.map(u=>u.displayName.toLowerCase()));
+    for(const line of lines){
+      const cells = line.split(',').map(c=>c.trim()).filter(Boolean);
+      if(cells.length===0) continue;
+      // skip an obvious header row
+      if(/^(name|email|display)/i.test(cells[0]) && cells.some(c=>/email/i.test(c))) continue;
+      const emailCell = cells.find(c=>c.includes('@'));
+      if(!emailCell){ skipped++; continue; }
+      const others = cells.filter(c=>c!==emailCell);
+      let displayName = others[0];
+      if(!displayName){ skipped++; continue; }
+      let finalName = displayName, n = 1;
+      while(existingNames.has(finalName.toLowerCase())){ n++; finalName = `${displayName} ${n}`; }
+      existingNames.add(finalName.toLowerCase());
+      const newUser = { id: uid('u'), password: finalName, displayName: finalName, email: emailCell, isAdmin: false };
+      state.users.push(newUser);
+      state.entries.push({ id: uid('e'), userId: newUser.id, label: 'Entry 1', eliminated:false, eliminatedWeek:null, picks:{} });
+      added++;
+    }
+    await saveState();
+    showMsg('ok', `Imported ${added} user${added===1?'':'s'}.${skipped?` Skipped ${skipped} row(s) missing an email or name.`:''}`);
+  });
+}
+
+// ---------- boot ----------
+(async function(){
+  await loadState();
+  render();
+})();
+</script>
 </body>
 </html>
