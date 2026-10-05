@@ -121,7 +121,10 @@
 <nav id="nav"></nav>
 <main id="main"></main>
 
-<script>
+<script type="module">
+import { initializeApp, deleteApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, updatePassword, reauthenticateWithCredential, EmailAuthProvider } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { getFirestore, doc, getDoc, getDocs, updateDoc, collection, writeBatch, Timestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 const STORAGE_KEY = 'league-data-v1';
 const SESSION_KEY = 'session-v1';
 // Players eliminated from Survivor can buy back in by submitting a winning pick
@@ -225,68 +228,265 @@ let session = { userId: null };
 let activeTab = 'home';
 let msg = null;
 
-// ---------- storage helpers (db capability for shared data, localStorage for session) ----------
-let dbDocRef = null;
-let storageMode = 'claude'; // 'claude' = shared db capability, 'local' = this browser only
-// Minimal stand-in for a database document, backed by this browser's localStorage.
-// Used when the app runs outside Claude (e.g. GitHub Pages) until a real backend is added.
-function makeLocalDoc(key){
-  return {
-    async get(){
-      const raw = localStorage.getItem(key);
-      return { exists: raw!==null, data: ()=> JSON.parse(raw) };
-    },
-    async set(obj){ localStorage.setItem(key, JSON.stringify(obj)); }
-  };
+// ---------- Firebase (Auth + Firestore) ----------
+const firebaseConfig = {
+  apiKey: "AIzaSyAaaSoJ_LnAVySx0CKdd4pM3zZsvukPITc",
+  authDomain: "survivor-league-2d6e9.firebaseapp.com",
+  projectId: "survivor-league-2d6e9",
+  storageBucket: "survivor-league-2d6e9.firebasestorage.app",
+  messagingSenderId: "987687507561",
+  appId: "1:987687507561:web:3531542fcb4572acd7f4f8"
+};
+const fbApp = initializeApp(firebaseConfig);
+const auth = getAuth(fbApp);
+const db = getFirestore(fbApp);
+
+// Players log in with their display name; behind the scenes it maps to a hidden email.
+const EMAIL_DOMAIN = 'survivor-league.invalid';
+function nameToEmail(name){
+  const slug = name.trim().toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'');
+  return slug + '@' + EMAIL_DOMAIN;
 }
-async function initDb(){
-  try{
-    if(window.claude){
-      const dbApi = await window.claude.use('db');
-      dbDocRef = dbApi ? dbApi.doc('league/data') : null;
-      storageMode = 'claude';
-    } else {
-      dbDocRef = makeLocalDoc('league-data-local');
-      storageMode = 'local';
-    }
-  }catch(e){ dbDocRef = null; }
+function startingPassword(name){
+  const n = name.trim();
+  return n.length >= 6 ? n : n + ' league';
 }
+function friendlyAuthError(e){
+  const c = (e && e.code) || '';
+  if(['auth/invalid-credential','auth/wrong-password','auth/user-not-found','auth/invalid-login-credentials'].includes(c)) return 'Incorrect display name or password.';
+  if(c==='auth/too-many-requests') return 'Too many attempts — wait a few minutes and try again.';
+  if(c==='auth/network-request-failed') return 'Network problem — check your connection and try again.';
+  if(c==='auth/weak-password') return 'Password must be at least 6 characters.';
+  if(c==='auth/requires-recent-login') return 'Please log out and back in, then try again.';
+  return (e && e.message) ? e.message : String(e);
+}
+
+let fbUser = null;      // the signed-in Firebase account
+let myProfile = null;   // that account's players/{uid} document
+let lastSaved = {};     // path -> JSON string of what is currently in Firestore
+let loading = false;
+
 function defaultState(){
   const games = {};
   for(let w=1; w<=18; w++) games[w] = buildScheduleGames(w);
   return { users: [], entries: [], games, roundupPosts: [], meta: { season: 2026, currentWeek: 1, openDay: 1, openHour: 0, openMinute: 0, deadlineDay: 3, deadlineHour: 23, deadlineMinute: 59 } };
 }
-async function loadState(){
-  await initDb();
-  try{
-    if(!dbDocRef) throw new Error('db capability unavailable');
-    const snap = await dbDocRef.get();
-    if(snap.exists){
-      state = JSON.parse(JSON.stringify(snap.data())); // deep-clone: the snapshot object itself is read-only
-    } else {
-      state = defaultState();
-      await saveState();
-    }
-  }catch(e){
-    state = defaultState();
-  }
-  try{
-    const raw = localStorage.getItem(SESSION_KEY);
-    session = raw ? JSON.parse(raw) : { userId: null };
-  }catch(e){ session = { userId: null }; }
+
+// --- Window timestamps: the server enforces the pick window using these absolute times ---
+function etOffsetMinutes(utcMsRaw){
+  const utcMs = Math.floor(utcMsRaw/1000)*1000; // whole seconds, so the offset is exact
+  const dtf = new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',hourCycle:'h23',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  const p = Object.fromEntries(dtf.formatToParts(new Date(utcMs)).map(x=>[x.type,x.value]));
+  const asUtc = Date.UTC(+p.year, +p.month-1, +p.day, +p.hour, +p.minute, +p.second);
+  return (asUtc - utcMs) / 60000;
 }
+function fakeEtToUtcMs(d){
+  const guess = Date.UTC(d.getFullYear(), d.getMonth(), d.getDate(), d.getHours(), d.getMinutes(), d.getSeconds(), d.getMilliseconds());
+  let utc = guess - etOffsetMinutes(guess)*60000;
+  utc = guess - etOffsetMinutes(utc)*60000;
+  return utc;
+}
+function refreshWindowTimestamps(){
+  const o = getOpenSettings(), c = getCloseSettings();
+  const lastOpen = mostRecentOccurrence(o.day, o.hour, o.minute, false);
+  const lastClose = mostRecentOccurrence(c.day, c.hour, c.minute, true);
+  let openFake, closeFake;
+  if(lastOpen > lastClose){
+    openFake = lastOpen;
+    closeFake = nextOccurrence(c.day, c.hour, c.minute, true);
+  } else {
+    openFake = nextOccurrence(o.day, o.hour, o.minute, false);
+    closeFake = new Date(openFake);
+    closeFake.setDate(closeFake.getDate() + ((c.day - o.day + 7) % 7));
+    closeFake.setHours(c.hour, c.minute, 59, 999);
+    if(closeFake <= openFake) closeFake.setDate(closeFake.getDate() + 7);
+  }
+  state.meta.openAtMs = fakeEtToUtcMs(openFake);
+  state.meta.closeAtMs = fakeEtToUtcMs(closeFake);
+}
+
+// --- Turn the in-memory state into Firestore documents (and back) ---
+function nameOfUser(userId){ const u = state.users.find(x=>x.id===userId); return u ? u.displayName : ''; }
+function buildDocs(){
+  const docs = {};
+  docs['league/meta'] = state.meta;
+  const weeks = {};
+  Object.keys(state.games).forEach(w=>{ weeks[w] = state.games[w]; });
+  docs['league/games'] = { weeks };
+  docs['league/roundups'] = { posts: state.roundupPosts || [] };
+  const pendingIds = new Set(state.users.filter(u=>u.pending).map(u=>u.id));
+  state.users.forEach(u=>{
+    if(u.pending) return;
+    docs['players/'+u.id] = { displayName: u.displayName, isAdmin: !!u.isAdmin, mustChange: !!u.mustChange };
+  });
+  state.entries.forEach(e=>{
+    if(pendingIds.has(e.userId)) return;
+    docs['entries/'+e.id] = {
+      ownerUid: e.userId, ownerName: nameOfUser(e.userId) || e.ownerName || '',
+      label: e.label, eliminated: !!e.eliminated,
+      eliminatedWeek: (e.eliminatedWeek ?? null), picks: e.picks || {}
+    };
+  });
+  return docs;
+}
+function toFirestore(path, data){
+  const clean = JSON.parse(JSON.stringify(data));
+  if(path === 'league/meta'){
+    if(clean.openAtMs) clean.openAt = Timestamp.fromMillis(clean.openAtMs);
+    if(clean.closeAtMs) clean.closeAt = Timestamp.fromMillis(clean.closeAtMs);
+    delete clean.openAtMs; delete clean.closeAtMs;
+  }
+  return clean;
+}
+function docRefFor(path){ return doc(db, ...path.split('/')); }
+
+async function loadAll(){
+  const userId = fbUser.uid;
+  const meSnap = await getDoc(doc(db,'players',userId));
+  if(!meSnap.exists()){
+    await signOut(auth);
+    throw new Error('Your login exists, but you are not part of the league yet. Ask the commissioner to add you.');
+  }
+  myProfile = { id: userId, ...meSnap.data() };
+  const [metaSnap, gamesSnap, roundSnap, entriesSnap] = await Promise.all([
+    getDoc(doc(db,'league','meta')), getDoc(doc(db,'league','games')),
+    getDoc(doc(db,'league','roundups')), getDocs(collection(db,'entries'))
+  ]);
+  const s = defaultState();
+  if(metaSnap.exists()){
+    const m = metaSnap.data();
+    const openAt = m.openAt, closeAt = m.closeAt;
+    delete m.openAt; delete m.closeAt;
+    s.meta = { ...s.meta, ...m };
+    if(openAt && openAt.toMillis) s.meta.openAtMs = openAt.toMillis();
+    if(closeAt && closeAt.toMillis) s.meta.closeAtMs = closeAt.toMillis();
+  }
+  if(gamesSnap.exists()){
+    const w = gamesSnap.data().weeks || {};
+    s.games = {};
+    Object.keys(w).forEach(k=>{ s.games[Number(k)] = w[k]; });
+  }
+  if(roundSnap.exists()) s.roundupPosts = roundSnap.data().posts || [];
+  s.entries = entriesSnap.docs.map(d=>{
+    const x = d.data();
+    return { id: d.id, userId: x.ownerUid, ownerName: x.ownerName, label: x.label,
+             eliminated: !!x.eliminated, eliminatedWeek: x.eliminatedWeek ?? null, picks: x.picks || {} };
+  });
+  let playersLoaded = false;
+  if(myProfile.isAdmin){
+    const pSnap = await getDocs(collection(db,'players'));
+    s.users = pSnap.docs.map(d=>({ id: d.id, displayName: d.data().displayName, isAdmin: !!d.data().isAdmin, mustChange: !!d.data().mustChange }));
+    playersLoaded = true;
+  } else {
+    const seen = new Map();
+    s.entries.forEach(e=>{ if(!seen.has(e.userId)) seen.set(e.userId, { id: e.userId, displayName: e.ownerName || '', isAdmin: false }); });
+    seen.set(userId, { id: userId, displayName: myProfile.displayName, isAdmin: !!myProfile.isAdmin, mustChange: !!myProfile.mustChange });
+    s.users = Array.from(seen.values());
+  }
+  state = s;
+  session.userId = userId;
+  // Remember what Firestore holds, so saves only write what changed.
+  const docs = buildDocs();
+  lastSaved = {};
+  Object.keys(docs).forEach(p=>{
+    const exists = p==='league/meta' ? metaSnap.exists()
+                 : p==='league/games' ? gamesSnap.exists()
+                 : p==='league/roundups' ? roundSnap.exists()
+                 : p.startsWith('players/') ? (playersLoaded || p==='players/'+userId)
+                 : true;
+    if(exists) lastSaved[p] = JSON.stringify(docs[p]);
+  });
+  // First-ever admin login: seed the league documents.
+  if(myProfile.isAdmin && !metaSnap.exists()){
+    refreshWindowTimestamps();
+    await saveState();
+  }
+}
+
 async function saveState(){
+  if(!fbUser) throw new Error('Not signed in');
+  const admin = !!(myProfile && myProfile.isAdmin);
+  const docs = buildDocs();
+  const writes = [], deletes = [];
+  Object.keys(docs).forEach(path=>{
+    if(!admin && !path.startsWith('entries/')) return;   // players may only touch entries
+    const s = JSON.stringify(docs[path]);
+    if(lastSaved[path] !== s) writes.push([path, docs[path], s]);
+  });
+  if(admin) Object.keys(lastSaved).forEach(path=>{ if(!(path in docs)) deletes.push(path); });
   try{
-    if(!dbDocRef) throw new Error('db capability unavailable');
-    await dbDocRef.set(state);
-  }
-  catch(e){
-    showMsg('error','Could not save — please try again. (Are you signed into the right account?)');
-    throw e; // stop the calling handler here so it can't show a false "saved" message
+    let batch = writeBatch(db), n = 0;
+    const flush = async ()=>{ if(n>0){ await batch.commit(); batch = writeBatch(db); n = 0; } };
+    for(const [path, data] of writes){ batch.set(docRefFor(path), toFirestore(path, data)); n++; if(n>=400) await flush(); }
+    for(const path of deletes){ batch.delete(docRefFor(path)); n++; if(n>=400) await flush(); }
+    await flush();
+    writes.forEach(([p,d,s])=>{ lastSaved[p] = s; });
+    deletes.forEach(p=>{ delete lastSaved[p]; });
+  }catch(e){
+    const denied = e && (e.code==='permission-denied' || /permission/i.test(e.message||''));
+    showMsg('error', denied
+      ? 'The server rejected that change. If you were making a pick, the pick window may be closed (or not open yet).'
+      : 'Could not save — please try again.');
+    throw e; // stop the calling handler so it can't show a false "saved" message
   }
 }
-async function saveSession(){
-  try{ localStorage.setItem(SESSION_KEY, JSON.stringify(session)); }catch(e){}
+async function saveSession(){ /* login state is handled by Firebase Auth */ }
+
+// --- Admin: create real logins for players who only exist in the roster so far ---
+function setProgress(text){
+  ['create-progress','import-progress'].forEach(id=>{ const el = document.getElementById(id); if(el) el.textContent = text; });
+}
+async function createPendingAccounts(){
+  const pending = state.users.filter(u=>u.pending);
+  if(!pending.length){ showMsg('ok','There are no pending players.'); return; }
+  const secApp = initializeApp(firebaseConfig, 'secondary-' + Date.now());
+  const secAuth = getAuth(secApp);
+  let done = 0;
+  try{
+    for(const u of pending){
+      setProgress(`Creating login ${done+1} of ${pending.length}: ${u.displayName}…`);
+      const email = nameToEmail(u.displayName), temp = startingPassword(u.displayName);
+      let cred;
+      try{ cred = await createUserWithEmailAndPassword(secAuth, email, temp); }
+      catch(e){
+        if(e.code==='auth/email-already-in-use') cred = await signInWithEmailAndPassword(secAuth, email, temp);
+        else throw e;
+      }
+      const newId = cred.user.uid;
+      await signOut(secAuth);
+      state.entries.forEach(en=>{ if(en.userId===u.id) en.userId = newId; });
+      u.id = newId; u.pending = false; u.mustChange = true;
+      await saveState();
+      done++;
+    }
+    showMsg('ok', `Created ${done} player login${done===1?'':'s'}. Starting password is each player's display name.`);
+  }catch(e){
+    showMsg('error', `Stopped after ${done} of ${pending.length}: ${friendlyAuthError(e)} Click again to continue where it left off.`);
+  }finally{
+    try{ await deleteApp(secApp); }catch(_e){}
+  }
+}
+
+// --- Admin: one-time import of a league-data-backup.json file ---
+async function importBackup(obj){
+  const byName = new Map(state.users.map(u=>[u.displayName.toLowerCase(), u]));
+  const idMap = {};
+  (obj.users||[]).forEach(u=>{
+    const existing = byName.get(u.displayName.toLowerCase());
+    if(existing){ idMap[u.id] = existing.id; return; }
+    const nu = { id: u.id, displayName: u.displayName, isAdmin: false, pending: true, mustChange: true };
+    state.users.push(nu); byName.set(u.displayName.toLowerCase(), nu); idMap[u.id] = u.id;
+  });
+  const byId = new Map(state.entries.map(e=>[e.id, e]));
+  (obj.entries||[]).forEach(e=>{
+    const ne = { id: e.id, userId: idMap[e.userId] || e.userId, label: e.label, eliminated: !!e.eliminated, eliminatedWeek: e.eliminatedWeek ?? null, picks: e.picks || {} };
+    if(byId.has(e.id)) Object.assign(byId.get(e.id), ne); else state.entries.push(ne);
+  });
+  if(obj.games) state.games = obj.games;
+  if(obj.roundupPosts) state.roundupPosts = obj.roundupPosts;
+  if(obj.meta){ const m = { ...obj.meta }; delete m.openAtMs; delete m.closeAtMs; state.meta = { ...state.meta, ...m }; }
+  refreshWindowTimestamps();
+  await saveState();
 }
 
 function showMsg(type,text){ msg = {type,text}; render(); setTimeout(()=>{ msg=null; render(); }, 4000); }
@@ -545,13 +745,6 @@ function render(){
   renderNav();
   const main = document.getElementById('main');
   main.innerHTML = '';
-  if(storageMode==='local'){
-    const n = document.createElement('div');
-    n.className = 'msg';
-    n.style.cssText = 'background:var(--surface-2);border:1px solid var(--line);color:var(--muted);';
-    n.textContent = 'Preview mode: data on this page is saved only in this browser and is not shared with other players yet.';
-    main.appendChild(n);
-  }
   if(msg){
     const d = document.createElement('div');
     d.className = 'msg ' + (msg.type==='error'?'msg-error':'msg-ok');
@@ -559,7 +752,10 @@ function render(){
     main.appendChild(d);
   }
   const page = document.createElement('div');
-  if(activeTab==='home') page.innerHTML = renderHome();
+  if(!fbUser) page.innerHTML = renderLogin();
+  else if(loading) page.innerHTML = '<div class="card"><p class="muted">Loading league data…</p></div>';
+  else if(myProfile && myProfile.mustChange) page.innerHTML = renderForcePasswordChange();
+  else if(activeTab==='home') page.innerHTML = renderHome();
   else if(activeTab==='roundups') page.innerHTML = renderRoundUps();
   else if(activeTab==='picks') page.innerHTML = renderPicks();
   else if(activeTab==='standings') page.innerHTML = renderStandings();
@@ -575,15 +771,23 @@ function render(){
 function renderNav(){
   const nav = document.getElementById('nav');
   const user = currentUser();
-  const tabs = [
+  const fullAccess = !!fbUser && !(myProfile && myProfile.mustChange);
+  const tabs = fullAccess ? [
     ['home','Home'], ['roundups','Weekly Recap'], ['standings','Standings'], ['games','Games'], ['stats','League Stats']
-  ];
-  if(user && user.isAdmin) tabs.push(['admin','Admin']);
+  ] : [];
+  if(fullAccess && user && user.isAdmin) tabs.push(['admin','Admin']);
   let html = tabs.map(([id,label])=>`<button data-tab="${id}" class="${activeTab===id?'active':''}">${label}</button>`).join('');
   html += `<div class="spacer"></div>`;
-  html += `<button data-tab="account" class="account-btn ${activeTab==='account'?'active':''}">${user ? user.displayName : 'Log in'}</button>`;
+  if(fullAccess) html += `<button id="refresh-btn" title="Reload the latest data" style="color:var(--muted);">↻ Refresh</button>`;
+  html += `<button data-tab="account" class="account-btn ${activeTab==='account'?'active':''}">${fbUser ? (user ? user.displayName : 'Account') : 'Log in'}</button>`;
   nav.innerHTML = html;
-  nav.querySelectorAll('button').forEach(b=>b.addEventListener('click', ()=>setTab(b.dataset.tab)));
+  nav.querySelectorAll('button[data-tab]').forEach(b=>b.addEventListener('click', ()=>setTab(b.dataset.tab)));
+  const rb = nav.querySelector('#refresh-btn');
+  if(rb) rb.addEventListener('click', async ()=>{
+    rb.textContent = 'Refreshing…';
+    try{ await loadAll(); }catch(e){ showMsg('error','Could not refresh: '+friendlyAuthError(e)); return; }
+    render();
+  });
 }
 
 // ---------- HOME ----------
@@ -967,37 +1171,49 @@ function renderLeagueStats(){
   </div>`;
 }
 
-// ---------- ACCOUNT ----------
-let authMode = 'login';
+// ---------- ACCOUNT / LOGIN ----------
+function renderLogin(){
+  return `
+  <div class="card" style="max-width:420px;margin:30px auto;">
+    <h2 style="margin-top:0;">Log in</h2>
+    <p class="muted" style="font-size:13px;">Use your display name exactly as it appears on the standings. First time? Your starting password is your display name — you'll be asked to choose a new one right away.</p>
+    <div class="field"><label>Display name</label><input type="text" id="auth-display" autocomplete="username" placeholder="e.g. Jane Smith"></div>
+    <div class="field"><label>Password</label><input type="password" id="auth-password" autocomplete="current-password"></div>
+    <button class="btn" id="auth-submit">Log in</button>
+  </div>`;
+}
+function renderForcePasswordChange(){
+  return `
+  <div class="card" style="max-width:420px;margin:30px auto;">
+    <h2 style="margin-top:0;">Choose a new password</h2>
+    <p class="muted" style="font-size:13px;">Welcome, ${myProfile.displayName}! Before you continue, pick your own password (at least 6 characters). It can't be the same as your starting password.</p>
+    <div class="field"><label>New password</label><input type="password" id="fp-new" autocomplete="new-password"></div>
+    <div class="field"><label>Confirm new password</label><input type="password" id="fp-new2" autocomplete="new-password"></div>
+    <button class="btn" id="force-pw-btn">Save password</button>
+    <button class="btn-outline" id="logout-btn" style="margin-left:8px;">Log out</button>
+  </div>`;
+}
 function renderAccount(){
   const user = currentUser();
-  if(user){
-    const entries = userEntries(user.id);
-    return `
-    <div class="card">
-      <h2 style="margin-top:0;">${user.displayName}</h2>
-      <p class="muted">${user.email}</p>
-      <p class="muted">${user.isAdmin?'Commissioner / Admin':'Player'}</p>
-      <div class="hr"></div>
-      <h3>Your entries</h3>
-      ${entries.length ? `<table><thead><tr><th>Entry</th><th>Status</th></tr></thead><tbody>
-        ${entries.map(e=>`<tr><td>${e.label}</td><td>${isDisplayAlive(e)?'Alive':'Out — Week '+displayEliminatedWeek(e)}</td></tr>`).join('')}
-      </tbody></table>` : '<p class="muted">No entries yet — ask your commissioner to add one.</p>'}
-      <div class="hr"></div>
-      <button class="btn-outline" id="logout-btn">Log out</button>
-    </div>`;
-  }
+  if(!fbUser) return renderLogin();
+  const entries = user ? userEntries(user.id) : [];
   return `
-  <div class="card" style="max-width:400px;">
-    <div class="row" style="margin-bottom:16px;">
-      <button class="btn-outline ${authMode==='login'?'':'muted'}" id="mode-login" style="${authMode==='login'?'border-color:var(--accent);color:var(--accent);':''}">Log in</button>
-      <button class="btn-outline ${authMode==='signup'?'':'muted'}" id="mode-signup" style="${authMode==='signup'?'border-color:var(--accent);color:var(--accent);':''}">Sign up</button>
-    </div>
-    ${authMode==='signup' ? `<div class="field"><label>Email</label><input type="text" id="auth-email" placeholder="you@example.com"></div>` : ''}
-    <div class="field"><label>Display name</label><input type="text" id="auth-display" placeholder="e.g. Jane Smith"></div>
-    <div class="field"><label>Password</label><input type="password" id="auth-password"></div>
-    <button class="btn" id="auth-submit">${authMode==='login'?'Log in':'Create account'}</button>
-    <p class="muted" style="font-size:12px;margin-top:12px;">Passwords are stored for this league's use only — please don't reuse a sensitive password. Your display name is what you'll log in with, so make sure it's unique in the league.</p>
+  <div class="card">
+    <h2 style="margin-top:0;">${user ? user.displayName : 'Account'}</h2>
+    <p class="muted">${user && user.isAdmin?'Commissioner / Admin':'Player'}</p>
+    <div class="hr"></div>
+    <h3>Your entries</h3>
+    ${entries.length ? `<table><thead><tr><th>Entry</th><th>Status</th></tr></thead><tbody>
+      ${entries.map(e=>`<tr><td>${e.label}</td><td>${isDisplayAlive(e)?'Alive':'Out — Week '+displayEliminatedWeek(e)}</td></tr>`).join('')}
+    </tbody></table>` : '<p class="muted">No entries yet — ask your commissioner to add one.</p>'}
+    <div class="hr"></div>
+    <h3>Change password</h3>
+    <div class="field"><label>Current password</label><input type="password" id="cp-current" autocomplete="current-password"></div>
+    <div class="field"><label>New password</label><input type="password" id="cp-new" autocomplete="new-password"></div>
+    <div class="field"><label>Confirm new password</label><input type="password" id="cp-new2" autocomplete="new-password"></div>
+    <button class="btn-outline" id="change-pw-btn">Change password</button>
+    <div class="hr"></div>
+    <button class="btn-outline" id="logout-btn">Log out</button>
   </div>`;
 }
 
@@ -1067,7 +1283,7 @@ function renderAdmin(){
     const ents = userEntries(u.id);
     const isConfirming = confirmingRemoveUserId===u.id;
     return `<div class="row" style="padding:8px 0;border-bottom:1px solid var(--line);">
-      <div><strong>${u.displayName}</strong> <span class="muted">(${u.email}) ${u.isAdmin?'· admin':''}</span><br>
+      <div><strong>${u.displayName}</strong> <span class="muted">${u.isAdmin?'· admin':''}${u.pending?' · login not created yet':''}</span><br>
       <span class="muted" style="font-size:12px;">${ents.map(e=>e.label+(e.eliminated?' [out]':'')).join(', ')||'no entries'}</span></div>
       <div>
         ${isConfirming ? `
@@ -1153,12 +1369,13 @@ function renderAdmin(){
     <h2 style="margin-top:0;">Admin — Users &amp; Entries</h2>
     ${usersList || '<p class="empty">No users yet.</p>'}
     <div class="hr"></div>
-    <button class="btn-outline" id="export-emails">Export all emails</button>
-    <div id="email-export-box"></div>
+    <button class="btn" id="create-accounts-btn">Create player logins (${state.users.filter(u=>u.pending).length} pending)</button>
+    <p class="muted" style="font-size:12px;margin:6px 0 0;">Gives each pending player a login. Starting password = their display name; they must change it the first time they log in.</p>
+    <div id="create-progress" class="muted" style="margin-top:8px;font-size:13px;"></div>
   </div>
   <div class="card">
     <h3 style="margin-top:0;">Import roster &amp; Week ${week} picks</h3>
-    <p class="muted" style="font-size:13px;">Paste rows of <code>Name&nbsp;&nbsp;Team</code> (tab, or comma, separated — pasting straight from a spreadsheet works). If a person has multiple entries, add a number at the end of their name for each row (e.g. "Alex Wynn 1", "Alex Wynn 2") — those will be grouped under one login with an entry each. People with no number get a single "Entry 1". New people get an account with a placeholder email and a temporary password matching their name; existing people (matched by name) just get this week's pick recorded on the right entry.</p>
+    <p class="muted" style="font-size:13px;">Paste rows of <code>Name&nbsp;&nbsp;Team</code> (tab, or comma, separated — pasting straight from a spreadsheet works). If a person has multiple entries, add a number at the end of their name for each row (e.g. "Alex Wynn 1", "Alex Wynn 2") — those will be grouped under one login with an entry each. People with no number get a single "Entry 1". New people are added as pending players — use “Create player logins” above to give them a login. Existing people (matched by name) just get this week's pick recorded on the right entry.</p>
     <div class="field"><label>Pick type</label>
       <select id="roster-import-type">
         <option value="survivor">Survivor pick (team to win)</option>
@@ -1171,12 +1388,11 @@ Alex Wynn 2	CHICAGO"></textarea>
     <button class="btn" id="roster-import" style="margin-top:10px;">Import for Week ${week}</button>
   </div>
   <div class="card">
-    <h3 style="margin-top:0;">Bulk add users from CSV</h3>
-    <p class="muted" style="font-size:13px;">Paste rows below, one person per line. Include an email address on each line (required) and, optionally, a display name. Everyone's temporary password will be set to match their display name — tell them to log in with that and change nothing else for now.</p>
-    <p class="muted" style="font-size:12px;">Examples that all work: <code>Jane Smith, jane@email.com</code> &nbsp;or&nbsp; <code>jane@email.com, Jane Smith</code></p>
-    <textarea id="bulk-csv" rows="8" style="width:100%;background:var(--surface-2);color:var(--text);border:1px solid var(--line);border-radius:4px;padding:10px;font-family:monospace;font-size:13px;" placeholder="Jane Smith, jane@email.com
-John Doe, john@email.com"></textarea>
-    <button class="btn" id="bulk-import" style="margin-top:10px;">Import Users</button>
+    <h3 style="margin-top:0;">Import league backup (JSON)</h3>
+    <p class="muted" style="font-size:13px;">One-time migration: choose a league-data-backup.json file. Players are added as pending and their logins are created automatically (this can take a minute or two). Entries with the same ID are overwritten, so don't use this once the season is live.</p>
+    <input type="file" id="backup-file" accept=".json,application/json">
+    <button class="btn" id="import-backup-btn" style="margin-top:10px;">Import backup &amp; create logins</button>
+    <div id="import-progress" class="muted" style="margin-top:8px;font-size:13px;"></div>
   </div>`;
 }
 
@@ -1264,38 +1480,50 @@ function attachHandlers(){
   }));
 
   // Account tab
-  const modeLogin = document.getElementById('mode-login');
-  if(modeLogin) modeLogin.addEventListener('click', ()=>{ authMode='login'; render(); });
-  const modeSignup = document.getElementById('mode-signup');
-  if(modeSignup) modeSignup.addEventListener('click', ()=>{ authMode='signup'; render(); });
   const authSubmit = document.getElementById('auth-submit');
-  if(authSubmit) authSubmit.addEventListener('click', async ()=>{
-    const displayName = document.getElementById('auth-display').value.trim();
-    const password = document.getElementById('auth-password').value;
-    if(!displayName || !password){ showMsg('error','Enter a display name and password.'); return; }
-    if(authMode==='signup'){
-      const email = document.getElementById('auth-email').value.trim();
-      if(!email || !email.includes('@')){ showMsg('error','Enter a valid email address.'); return; }
-      if(state.users.find(u=>u.displayName.toLowerCase()===displayName.toLowerCase())){ showMsg('error','That display name is already taken — try adding a last initial.'); return; }
-      const isFirstUser = state.users.length===0;
-      const newUser = { id: uid('u'), password, displayName, email, isAdmin: isFirstUser };
-      state.users.push(newUser);
-      const entry = { id: uid('e'), userId: newUser.id, label: 'Entry 1', eliminated:false, eliminatedWeek:null, picks:{} };
-      state.entries.push(entry);
-      await saveState();
-      session.userId = newUser.id; await saveSession();
-      showMsg('ok', isFirstUser ? 'Account created! You are the first user, so you\'re the admin.' : 'Account created!');
-    } else {
-      const u = state.users.find(u=>u.displayName.toLowerCase()===displayName.toLowerCase() && u.password===password);
-      if(!u){ showMsg('error','Incorrect display name or password.'); return; }
-      session.userId = u.id; await saveSession();
-      showMsg('ok','Welcome back, '+u.displayName+'.');
-    }
-    activeTab = 'home';
-    render();
-  });
+  if(authSubmit){
+    const doLogin = async ()=>{
+      const name = document.getElementById('auth-display').value.trim();
+      const pw = document.getElementById('auth-password').value;
+      if(!name || !pw){ showMsg('error','Enter your display name and password.'); return; }
+      authSubmit.disabled = true;
+      try{ await signInWithEmailAndPassword(auth, nameToEmail(name), pw); }
+      catch(e){ showMsg('error', friendlyAuthError(e)); }
+    };
+    authSubmit.addEventListener('click', doLogin);
+    const pwEl = document.getElementById('auth-password');
+    if(pwEl) pwEl.addEventListener('keydown', ev=>{ if(ev.key==='Enter') doLogin(); });
+  }
   const logoutBtn = document.getElementById('logout-btn');
-  if(logoutBtn) logoutBtn.addEventListener('click', async ()=>{ session.userId = null; await saveSession(); activeTab='home'; render(); });
+  if(logoutBtn) logoutBtn.addEventListener('click', async ()=>{ await signOut(auth); });
+  const forcePwBtn = document.getElementById('force-pw-btn');
+  if(forcePwBtn) forcePwBtn.addEventListener('click', async ()=>{
+    const a = document.getElementById('fp-new').value, b = document.getElementById('fp-new2').value;
+    if(a.length < 6){ showMsg('error','Password must be at least 6 characters.'); return; }
+    if(a !== b){ showMsg('error','The two passwords don\'t match.'); return; }
+    if(a === startingPassword(myProfile.displayName)){ showMsg('error','Please choose a different password than your starting one.'); return; }
+    try{
+      await updatePassword(fbUser, a);
+      await updateDoc(doc(db,'players',fbUser.uid), { mustChange: false });
+      myProfile.mustChange = false;
+      const me = state.users.find(u=>u.id===fbUser.uid); if(me) me.mustChange = false;
+      const pd = buildDocs()['players/'+fbUser.uid]; if(pd) lastSaved['players/'+fbUser.uid] = JSON.stringify(pd);
+      activeTab = 'home';
+      showMsg('ok','Password saved. Welcome!');
+    }catch(e){ showMsg('error', friendlyAuthError(e)); }
+  });
+  const changePwBtn = document.getElementById('change-pw-btn');
+  if(changePwBtn) changePwBtn.addEventListener('click', async ()=>{
+    const cur = document.getElementById('cp-current').value;
+    const a = document.getElementById('cp-new').value, b = document.getElementById('cp-new2').value;
+    if(a.length < 6){ showMsg('error','New password must be at least 6 characters.'); return; }
+    if(a !== b){ showMsg('error','The two new passwords don\'t match.'); return; }
+    try{
+      await reauthenticateWithCredential(fbUser, EmailAuthProvider.credential(fbUser.email, cur));
+      await updatePassword(fbUser, a);
+      showMsg('ok','Password changed.');
+    }catch(e){ showMsg('error', friendlyAuthError(e)); }
+  });
 
   // Admin tab
   const saveDeadlineBtn = document.getElementById('save-deadline');
@@ -1315,6 +1543,7 @@ function attachHandlers(){
     state.meta.deadlineDay = closeDay;
     state.meta.deadlineHour = ch;
     state.meta.deadlineMinute = cm;
+    refreshWindowTimestamps();
     await saveState();
     updateDeadlineLabel();
     showMsg('ok', `Pick window updated: opens ${DAY_NAMES[openDay]} ${formatClock(oh,om)} ET, closes ${DAY_NAMES[closeDay]} ${formatClock(ch,cm)} ET.`);
@@ -1463,6 +1692,7 @@ function attachHandlers(){
     state.meta.currentWeek += 1;
     adminWeek = state.meta.currentWeek;
     stagedGames = null;
+    refreshWindowTimestamps();
     await saveState();
     showMsg('ok','Advanced to Week '+state.meta.currentWeek+'.');
   });
@@ -1528,8 +1758,7 @@ function attachHandlers(){
 
       let user = state.users.find(u=>u.displayName.toLowerCase()===baseName.toLowerCase());
       if(!user){
-        const placeholderEmail = baseName.toLowerCase().replace(/[^a-z0-9]+/g,'.').replace(/(^\.|\.$)/g,'') + '@placeholder.local';
-        user = { id: uid('u'), displayName: baseName, password: baseName, email: placeholderEmail, isAdmin: false };
+        user = { id: uid('u'), displayName: baseName, isAdmin: false, pending: true, mustChange: true };
         state.users.push(user);
         usersCreated++;
       }
@@ -1555,50 +1784,51 @@ function attachHandlers(){
     await saveState();
     const typeLabel = pickType==='survivor' ? 'Survivor' : 'High Score';
     let msg = `Imported (${typeLabel}): ${usersCreated} new user(s), ${entriesCreated} new entr${entriesCreated===1?'y':'ies'}, ${picksSet} pick(s) set for Week ${week}.`;
+    if(usersCreated) msg += ' New players are pending — click “Create player logins” in Users & Entries to give them logins.';
     if(skipped.length) msg += ` ${skipped.length} row(s) could not be parsed (unresolved team name or format).`;
     if(reusedTeamWarnings.length) msg += ` ${reusedTeamWarnings.length} pick(s) repeat a team used in an earlier week — check the standings pick history.`;
     showMsg(skipped.length ? 'error' : 'ok', msg);
     if(skipped.length) console.warn('Unparsed roster rows:', skipped);
   });
-  const exportEmailsBtn = document.getElementById('export-emails');
-  if(exportEmailsBtn) exportEmailsBtn.addEventListener('click', ()=>{
-    const box = document.getElementById('email-export-box');
-    const emails = state.users.map(u=>u.email).filter(Boolean).join(', ');
-    box.innerHTML = `<textarea readonly rows="4" style="width:100%;margin-top:10px;background:var(--surface-2);color:var(--text);border:1px solid var(--line);border-radius:4px;padding:10px;font-size:13px;">${emails}</textarea>`;
+  const createAccountsBtn = document.getElementById('create-accounts-btn');
+  if(createAccountsBtn) createAccountsBtn.addEventListener('click', async ()=>{
+    createAccountsBtn.disabled = true;
+    await createPendingAccounts();
   });
-  const bulkImportBtn = document.getElementById('bulk-import');
-  if(bulkImportBtn) bulkImportBtn.addEventListener('click', async ()=>{
-    const raw = document.getElementById('bulk-csv').value;
-    const lines = raw.split('\n').map(l=>l.trim()).filter(Boolean);
-    let added = 0, skipped = 0;
-    const existingNames = new Set(state.users.map(u=>u.displayName.toLowerCase()));
-    for(const line of lines){
-      const cells = line.split(',').map(c=>c.trim()).filter(Boolean);
-      if(cells.length===0) continue;
-      // skip an obvious header row
-      if(/^(name|email|display)/i.test(cells[0]) && cells.some(c=>/email/i.test(c))) continue;
-      const emailCell = cells.find(c=>c.includes('@'));
-      if(!emailCell){ skipped++; continue; }
-      const others = cells.filter(c=>c!==emailCell);
-      let displayName = others[0];
-      if(!displayName){ skipped++; continue; }
-      let finalName = displayName, n = 1;
-      while(existingNames.has(finalName.toLowerCase())){ n++; finalName = `${displayName} ${n}`; }
-      existingNames.add(finalName.toLowerCase());
-      const newUser = { id: uid('u'), password: finalName, displayName: finalName, email: emailCell, isAdmin: false };
-      state.users.push(newUser);
-      state.entries.push({ id: uid('e'), userId: newUser.id, label: 'Entry 1', eliminated:false, eliminatedWeek:null, picks:{} });
-      added++;
+  const importBackupBtn = document.getElementById('import-backup-btn');
+  if(importBackupBtn) importBackupBtn.addEventListener('click', async ()=>{
+    const f = document.getElementById('backup-file').files[0];
+    if(!f){ showMsg('error','Choose a backup .json file first.'); return; }
+    importBackupBtn.disabled = true;
+    try{
+      setProgress('Reading backup…');
+      const obj = JSON.parse(await f.text());
+      if(!obj.users || !obj.entries) throw new Error('That file does not look like a league backup.');
+      setProgress('Importing data…');
+      await importBackup(obj);
+      await createPendingAccounts();
+    }catch(e){
+      showMsg('error', 'Import stopped: ' + (e && e.message ? e.message : e));
     }
-    await saveState();
-    showMsg('ok', `Imported ${added} user${added===1?'':'s'}.${skipped?` Skipped ${skipped} row(s) missing an email or name.`:''}`);
   });
 }
 
 // ---------- boot ----------
-(async function(){
-  await loadState();
+(function(){
+  state = defaultState();
   render();
+  onAuthStateChanged(auth, async (user)=>{
+    fbUser = user;
+    if(user){
+      loading = true; render();
+      try{ await loadAll(); }
+      catch(e){ showMsg('error', e && e.code==='permission-denied' ? 'You do not have access to the league data.' : (e.message || String(e))); }
+      loading = false;
+    } else {
+      myProfile = null; state = defaultState(); session = { userId: null }; lastSaved = {}; activeTab = 'home';
+    }
+    render();
+  });
 })();
 </script>
 </body>
