@@ -701,41 +701,63 @@ function tickCountdown(){
 setInterval(tickCountdown, 1000);
 
 // ---------- ESPN fetch (with manual fallback) ----------
-// ESPN's scoreboard endpoint is unreliable when week+year are combined directly,
-// so we first look up the exact date range for the requested week from the season
-// calendar, then fetch scores for that date range (a more reliable query shape).
+// ESPN uses different abbreviations for a few teams; normalize them to match the app.
+const ESPN_ABBR_MAP = { WSH:'WAS', JAC:'JAX' };
+function normalizeESPNAbbr(abbr){ return ESPN_ABBR_MAP[abbr] || abbr; }
+function parseESPNScore(score){
+  if(score === undefined || score === null || score === '') return null;
+  const n = parseInt(score);
+  return isNaN(n) ? null : n;
+}
+function mapESPNEvents(events, week){
+  return events
+    .filter(ev => ev.week && ev.week.number === Number(week))
+    .map(ev => {
+      const comp = ev.competitions[0];
+      const home = comp.competitors.find(c => c.homeAway === 'home');
+      const away = comp.competitors.find(c => c.homeAway === 'away');
+      return {
+        id: ev.id, week: Number(week),
+        home: normalizeESPNAbbr(home.team.abbreviation),
+        away: normalizeESPNAbbr(away.team.abbreviation),
+        homeScore: parseESPNScore(home.score),
+        awayScore: parseESPNScore(away.score),
+        status: comp.status.type.completed ? 'final' : (comp.status.type.state === 'in' ? 'live' : 'scheduled'),
+        startTime: ev.date
+      };
+    });
+}
+// Two strategies: (1) look up the week's exact date range from the season calendar,
+// then fetch by date range — more precise; (2) direct week+seasontype query — simpler
+// but ESPN sometimes returns the wrong week. Try (1) first, fall back to (2).
 async function fetchWeekFromESPN(week){
+  const toYMD = iso => iso.slice(0,10).replace(/-/g,'');
+  // Strategy 1: calendar → date range
   try{
     const baseRes = await fetch('https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard');
     if(!baseRes.ok) throw new Error('base fetch failed');
     const baseData = await baseRes.json();
     const calendar = baseData.leagues?.[0]?.calendar || [];
-    const regSeason = calendar.find(c=>c.label==='Regular Season');
-    const weekEntry = regSeason && regSeason.entries.find(e=>e.value===String(week));
+    const regSeason = calendar.find(c => c.label === 'Regular Season');
+    const weekEntry = regSeason && regSeason.entries.find(e => e.value === String(week));
     if(!weekEntry) throw new Error('week not found in calendar');
-    const toYMD = iso => iso.slice(0,10).replace(/-/g,'');
     const range = `${toYMD(weekEntry.startDate)}-${toYMD(weekEntry.endDate)}`;
     const res = await fetch(`https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?dates=${range}&limit=1000`);
     if(!res.ok) throw new Error('range fetch failed');
     const data = await res.json();
-    return (data.events||[])
-      .filter(ev => ev.week && ev.week.number===Number(week))
-      .map(ev=>{
-        const comp = ev.competitions[0];
-        const home = comp.competitors.find(c=>c.homeAway==='home');
-        const away = comp.competitors.find(c=>c.homeAway==='away');
-        return {
-          id: ev.id, week: Number(week),
-          home: home.team.abbreviation, away: away.team.abbreviation,
-          homeScore: home.score!==undefined ? parseInt(home.score)||0 : null,
-          awayScore: away.score!==undefined ? parseInt(away.score)||0 : null,
-          status: comp.status.type.completed ? 'final' : (comp.status.type.state==='in' ? 'live' : 'scheduled'),
-          startTime: ev.date
-        };
-      });
-  }catch(e){
-    return null;
-  }
+    const games = mapESPNEvents(data.events || [], week);
+    if(games.length > 0) return games;
+    throw new Error('no games found in date range');
+  }catch(_){}
+  // Strategy 2: direct week query
+  try{
+    const res = await fetch(`https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?seasontype=2&week=${week}&limit=100`);
+    if(!res.ok) throw new Error('direct fetch failed');
+    const data = await res.json();
+    const games = mapESPNEvents(data.events || [], week);
+    if(games.length > 0) return games;
+  }catch(_){}
+  return null;
 }
 
 // ---------- render root ----------
