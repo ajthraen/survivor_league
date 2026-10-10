@@ -978,24 +978,24 @@ function renderStandings(){
         `<span style="font-size:12px;font-weight:700;color:${color};line-height:1.3;">${abbr || '—'}</span>` +
         `</div>`;
     }).join('');
-    return `<div style="overflow-x:auto;-webkit-overflow-scrolling:touch;"><div style="display:inline-flex;min-width:max-content;">${chips}</div></div>`;
+    return `<div style="display:inline-flex;min-width:max-content;">${chips}</div>`;
   }
 
   let rows = active.map(e=>{
     const pendingWeek = pendingBuyBackWeek(e);
     return `
     <tr>
-      <td class="name">${ownerName(e)}</td>
+      <td class="name" style="position:sticky;left:0;background:var(--surface);z-index:1;">${ownerName(e)}</td>
       <td class="muted">${e.label}</td>
-      <td style="max-width:180px;overflow:hidden;">${pickHistory(e)}</td>
+      <td>${pickHistory(e)}</td>
       <td style="color:var(--accent);font-weight:700;">Alive${pendingWeek?` <span class="muted" style="font-weight:400;font-size:12px;">(buy-back pending, Wk ${pendingWeek})</span>`:''}</td>
     </tr>`;
   }).join('');
   rows += out.map(e=>`
     <tr class="eliminated-row">
-      <td class="name">${ownerName(e)}</td>
+      <td class="name" style="position:sticky;left:0;background:var(--surface-2);z-index:1;">${ownerName(e)}</td>
       <td>${e.label}</td>
-      <td style="max-width:180px;overflow:hidden;">${pickHistory(e, displayEliminatedWeek(e))}</td>
+      <td>${pickHistory(e, displayEliminatedWeek(e))}</td>
       <td>Out — Week ${displayEliminatedWeek(e)}</td>
     </tr>`).join('');
 
@@ -1016,10 +1016,15 @@ function renderStandings(){
   <div class="card">
     <h2 style="margin-top:0;">Season Standings</h2>
     ${state.entries.length===0 ? '<p class="empty">No entries yet.</p>' : `
-    <table>
-      <thead><tr><th>Owner</th><th>Entry</th><th>Picks</th><th>Status</th></tr></thead>
+    <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;margin:0 -20px;padding:0 20px;">
+    <table style="min-width:500px;">
+      <thead><tr>
+        <th style="position:sticky;left:0;background:var(--surface);z-index:1;">Owner</th>
+        <th>Entry</th><th>Picks</th><th>Status</th>
+      </tr></thead>
       <tbody>${rows}</tbody>
-    </table>`}
+    </table>
+    </div>`}
   </div>
   <div class="card">
     <h3 style="margin-top:0;">High Score Challenge</h3>
