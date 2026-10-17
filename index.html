@@ -945,10 +945,14 @@ function renderStandings(){
     state.entries.filter(e=>isDisplayAlive(e)),
     list => ownerName(list[0])
   );
-  const out = groupAndSort(
-    state.entries.filter(e=>!isDisplayAlive(e)),
-    list => -Math.max(...list.map(e=>displayEliminatedWeek(e)||0))
-  );
+  const out = state.entries
+    .filter(e => !isDisplayAlive(e))
+    .sort((a, b) => {
+      const wA = displayEliminatedWeek(a) || 0;
+      const wB = displayEliminatedWeek(b) || 0;
+      if(wB !== wA) return wB - wA;
+      return ownerName(a).localeCompare(ownerName(b));
+    });
   // For eliminated entries, history stops at the week they went out (that week is always
   // listed, so a missed pick shows as a blank chip). Past weeks are colored green (win)
   // or red (loss); current week picks are neutral.
