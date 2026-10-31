@@ -123,8 +123,8 @@
 
 <script type="module">
 import { initializeApp, deleteApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, updatePassword, reauthenticateWithCredential, EmailAuthProvider } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore, doc, getDoc, getDocs, updateDoc, collection, writeBatch, Timestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, updatePassword, reauthenticateWithCredential, EmailAuthProvider, deleteUser } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { getFirestore, doc, getDoc, getDocs, setDoc, deleteDoc, updateDoc, collection, writeBatch, Timestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 const STORAGE_KEY = 'league-data-v1';
 const SESSION_KEY = 'session-v1';
 // Players eliminated from Survivor can buy back in by submitting a winning pick
@@ -257,6 +257,7 @@ function friendlyAuthError(e){
   if(c==='auth/too-many-requests') return 'Too many attempts — wait a few minutes and try again.';
   if(c==='auth/network-request-failed') return 'Network problem — check your connection and try again.';
   if(c==='auth/weak-password') return 'Password must be at least 6 characters.';
+  if(c==='auth/email-already-in-use') return 'That display name is already taken — try another (or log in if it\'s you).';
   if(c==='auth/requires-recent-login') return 'Please log out and back in, then try again.';
   return (e && e.message) ? e.message : String(e);
 }
@@ -269,7 +270,40 @@ let loading = false;
 function defaultState(){
   const games = {};
   for(let w=1; w<=18; w++) games[w] = buildScheduleGames(w);
-  return { users: [], entries: [], games, roundupPosts: [], meta: { season: 2026, currentWeek: 1, openDay: 1, openHour: 0, openMinute: 0, deadlineDay: 3, deadlineHour: 23, deadlineMinute: 59 } };
+  return { users: [], entries: [], games, roundupPosts: [], signupOpen: false, signupRequests: [], meta: { season: 2026, currentWeek: 1, openDay: 1, openHour: 0, openMinute: 0, deadlineDay: 3, deadlineHour: 23, deadlineMinute: 59 } };
+}
+
+// --- Sign up: public/signup { open } is readable by anyone (even logged out); signupRequests/{uid} await admin approval ---
+const MAX_SIGNUP_ENTRIES = 5;
+const SIGNUP_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9 .'\-]{1,29}$/;
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+function esc(s){ return String(s ?? '').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+async function loadSignupStatus(){
+  try{ const snap = await getDoc(doc(db,'public','signup')); return snap.exists() && !!snap.data().open; }
+  catch(_e){ return false; }
+}
+function signupRequestFromSnap(d){
+  const x = d.data();
+  return { id: d.id, displayName: x.displayName || '', email: x.email || '', entries: Number(x.entries) || 1,
+           returning: !!x.returning, createdAtMs: x.createdAt && x.createdAt.toMillis ? x.createdAt.toMillis() : null };
+}
+// New player: create their login on a secondary app (so this page stays logged out), then file the request as them.
+async function submitNewSignup(name, email, pw, count){
+  const secApp = initializeApp(firebaseConfig, 'signup-' + Date.now());
+  try{
+    const secAuth = getAuth(secApp);
+    const cred = await createUserWithEmailAndPassword(secAuth, nameToEmail(name), pw);
+    try{
+      await setDoc(doc(getFirestore(secApp),'signupRequests',cred.user.uid),
+        { displayName: name, email, entries: count, returning: false, createdAt: Timestamp.now() });
+    }catch(e){
+      try{ await deleteUser(cred.user); }catch(_e){}   // free the name up again so they can retry
+      throw e;
+    }
+    await signOut(secAuth);
+  }finally{
+    try{ await deleteApp(secApp); }catch(_e){}
+  }
 }
 
 // --- Window timestamps: the server enforces the pick window using these absolute times ---
@@ -318,6 +352,7 @@ function buildDocs(){
   state.users.forEach(u=>{
     if(u.pending) return;
     docs['players/'+u.id] = { displayName: u.displayName, isAdmin: !!u.isAdmin, mustChange: !!u.mustChange };
+    if(u.email) docs['contacts/'+u.id] = { email: u.email };   // kept apart from players/, which every player can read
   });
   state.entries.forEach(e=>{
     if(pendingIds.has(e.userId)) return;
@@ -344,15 +379,28 @@ async function loadAll(){
   const userId = fbUser.uid;
   const meSnap = await getDoc(doc(db,'players',userId));
   if(!meSnap.exists()){
+    let pendingSignup = false;
+    try{ pendingSignup = (await getDoc(doc(db,'signupRequests',userId))).exists(); }catch(_e){}
     await signOut(auth);
-    throw new Error('Your login exists, but you are not part of the league yet. Ask the commissioner to add you.');
+    throw new Error(pendingSignup
+      ? 'Thanks for signing up! Your request is waiting for the commissioner to approve it — try again once you\'ve been approved.'
+      : 'Your login exists, but you are not part of the league yet. Ask the commissioner to add you.');
   }
   myProfile = { id: userId, ...meSnap.data() };
-  const [metaSnap, gamesSnap, roundSnap, entriesSnap] = await Promise.all([
+  const [metaSnap, gamesSnap, roundSnap, entriesSnap, signupOpen] = await Promise.all([
     getDoc(doc(db,'league','meta')), getDoc(doc(db,'league','games')),
-    getDoc(doc(db,'league','roundups')), getDocs(collection(db,'entries'))
+    getDoc(doc(db,'league','roundups')), getDocs(collection(db,'entries')), loadSignupStatus()
   ]);
   const s = defaultState();
+  s.signupOpen = signupOpen;
+  // Admins see every pending request; players only their own. Failures (e.g. rules not deployed yet) just mean none.
+  try{
+    if(myProfile.isAdmin) s.signupRequests = (await getDocs(collection(db,'signupRequests'))).docs.map(signupRequestFromSnap);
+    else {
+      const mine = await getDoc(doc(db,'signupRequests',userId));
+      s.signupRequests = mine.exists() ? [signupRequestFromSnap(mine)] : [];
+    }
+  }catch(_e){ s.signupRequests = []; }
   if(metaSnap.exists()){
     const m = metaSnap.data();
     const openAt = m.openAt, closeAt = m.closeAt;
@@ -383,6 +431,19 @@ async function loadAll(){
     seen.set(userId, { id: userId, displayName: myProfile.displayName, isAdmin: !!myProfile.isAdmin, mustChange: !!myProfile.mustChange });
     s.users = Array.from(seen.values());
   }
+  // Emails live in contacts/{uid}, readable only by that player and admins. Failures just mean no emails shown.
+  let contactsLoaded = false;
+  try{
+    if(myProfile.isAdmin){
+      const byId = new Map((await getDocs(collection(db,'contacts'))).docs.map(d=>[d.id, d.data().email]));
+      s.users.forEach(u=>{ if(byId.get(u.id)) u.email = byId.get(u.id); });
+      contactsLoaded = true;
+    } else {
+      const c = await getDoc(doc(db,'contacts',userId));
+      const me = s.users.find(u=>u.id===userId);
+      if(c.exists() && c.data().email) me.email = c.data().email;
+    }
+  }catch(_e){}
   state = s;
   session.userId = userId;
   // Remember what Firestore holds, so saves only write what changed.
@@ -393,6 +454,7 @@ async function loadAll(){
                  : p==='league/games' ? gamesSnap.exists()
                  : p==='league/roundups' ? roundSnap.exists()
                  : p.startsWith('players/') ? (playersLoaded || p==='players/'+userId)
+                 : p.startsWith('contacts/') ? (contactsLoaded || p==='contacts/'+userId)
                  : true;
     if(exists) lastSaved[p] = JSON.stringify(docs[p]);
   });
@@ -849,6 +911,36 @@ function renderHome(){
   <div class="card">
     <h3 style="margin-top:0;">How it works</h3>
     <p class="muted" style="line-height:1.6;">Pick one team to win, every week. Pick right, you move on. Pick wrong — or your team ties or you forget to pick — you're out. You can never pick the same team twice. Last entry standing wins the season. Eliminated? You can still chase weekly bragging rights in the High Score side game.</p>
+  </div>
+  ${renderHomeSignupCard()}`;
+}
+
+let homeSignupFormOpen = false;
+function entryCountOptions(){
+  return Array.from({length:MAX_SIGNUP_ENTRIES},(_,i)=>i+1).map(n=>`<option value="${n}">${n}</option>`).join('');
+}
+function renderHomeSignupCard(){
+  const myRequest = state.signupRequests.find(r=>r.id===session.userId);
+  let body;
+  if(myRequest){
+    body = `<p class="muted">You've requested <strong style="color:var(--text)">${myRequest.entries}</strong> entr${myRequest.entries===1?'y':'ies'} — waiting for the commissioner to approve.</p>`;
+  } else if(!state.signupOpen){
+    body = `<p class="muted">Sign up is currently closed.</p>
+    <button class="btn" disabled>Sign Up</button>`;
+  } else if(!homeSignupFormOpen){
+    body = `<p class="muted">Sign up is open — request your entries for the season.</p>
+    <button class="btn" id="home-signup-btn">Sign Up</button>`;
+  } else {
+    body = `
+    <div class="field"><label>Email</label><input type="email" id="hs-email" autocomplete="email" value="${esc(currentUser() && currentUser().email)}"></div>
+    <div class="field"><label>Number of entries</label><select id="hs-entries" style="width:auto;">${entryCountOptions()}</select></div>
+    <button class="btn" id="hs-submit">Submit request</button>
+    <button class="btn-outline" id="hs-cancel" style="margin-left:8px;">Cancel</button>`;
+  }
+  return `
+  <div class="card">
+    <h3 style="margin-top:0;">Sign Up</h3>
+    ${body}
   </div>`;
 }
 
@@ -1233,6 +1325,30 @@ function renderLogin(){
     <div class="field"><label>Display name</label><input type="text" id="auth-display" autocomplete="username" placeholder="e.g. Jane Smith"></div>
     <div class="field"><label>Password</label><input type="password" id="auth-password" autocomplete="current-password"></div>
     <button class="btn" id="auth-submit">Log in</button>
+  </div>
+  ${renderSignupForm()}`;
+}
+let signupFormOpen = false;
+function renderSignupForm(){
+  if(!state.signupOpen || !signupFormOpen){
+    return `
+    <div class="card" style="max-width:420px;margin:0 auto 30px;">
+      <h3 style="margin-top:0;">New to the league?</h3>
+      <p class="muted" style="font-size:13px;">${state.signupOpen ? 'Sign up is open. The commissioner approves each new player.' : 'Sign up is currently closed — check back before next season.'}</p>
+      <button class="btn" id="signup-btn" ${state.signupOpen?'':'disabled'}>Sign Up</button>
+    </div>`;
+  }
+  return `
+  <div class="card" style="max-width:420px;margin:0 auto 30px;">
+    <h2 style="margin-top:0;">Sign up</h2>
+    <p class="muted" style="font-size:13px;">Your display name is how you'll log in and how you appear on the standings. Letters, numbers, spaces, and . ' - only. The commissioner will approve your sign-up before you can log in.</p>
+    <div class="field"><label>Display name</label><input type="text" id="su-name" autocomplete="username" maxlength="30" placeholder="e.g. Jane Smith"></div>
+    <div class="field"><label>Email</label><input type="email" id="su-email" autocomplete="email"></div>
+    <div class="field"><label>Password</label><input type="password" id="su-pw" autocomplete="new-password"></div>
+    <div class="field"><label>Confirm password</label><input type="password" id="su-pw2" autocomplete="new-password"></div>
+    <div class="field"><label>Number of entries</label><select id="su-entries" style="width:auto;">${entryCountOptions()}</select></div>
+    <button class="btn" id="su-submit">Sign up</button>
+    <button class="btn-outline" id="su-cancel" style="margin-left:8px;">Cancel</button>
   </div>`;
 }
 function renderForcePasswordChange(){
@@ -1336,7 +1452,7 @@ function renderAdmin(){
     const ents = userEntries(u.id);
     const isConfirming = confirmingRemoveUserId===u.id;
     return `<div class="row" style="padding:8px 0;border-bottom:1px solid var(--line);">
-      <div><strong>${u.displayName}</strong> <span class="muted">${u.isAdmin?'· admin':''}${u.pending?' · login not created yet':''}</span><br>
+      <div><strong>${u.displayName}</strong> <span class="muted">${u.isAdmin?'· admin':''}${u.pending?' · login not created yet':''}${u.email?' · '+esc(u.email):''}</span><br>
       <span class="muted" style="font-size:12px;">${ents.map(e=>e.label+(e.eliminated?' [out]':'')).join(', ')||'no entries'}</span></div>
       <div>
         ${isConfirming ? `
@@ -1375,6 +1491,23 @@ function renderAdmin(){
       <div class="field"><label>Time (ET)</label><input type="time" id="deadline-time-input" value="${deadlineTimeVal}"></div>
     </div>
     <button class="btn" id="save-deadline">Save Pick Window</button>
+  </div>
+  <div class="card">
+    <h2 style="margin-top:0;">Admin — Sign Up</h2>
+    <p class="muted" style="font-size:13px;">Controls the Sign Up buttons on the login screen (new players) and the Home page (existing players requesting entries). When closed, they're greyed out. Each request waits here for your approval.</p>
+    <p>Sign up is currently <strong style="color:${state.signupOpen?'var(--accent)':'var(--danger)'}">${state.signupOpen?'OPEN':'CLOSED'}</strong>.</p>
+    <button class="btn" id="toggle-signup">${state.signupOpen?'Close Sign Up':'Open Sign Up'}</button>
+    <div class="hr"></div>
+    <h3>Pending sign-ups (${state.signupRequests.length})</h3>
+    ${state.signupRequests.length ? [...state.signupRequests].sort((a,b)=>(a.createdAtMs||0)-(b.createdAtMs||0)).map(r=>`
+      <div class="row" style="padding:8px 0;border-bottom:1px solid var(--line);">
+        <div><strong>${esc(r.displayName)}</strong> <span class="muted">${r.returning?'· existing player':'· new player'}</span><br>
+        <span class="muted" style="font-size:12px;">${esc(r.email)||'no email'} · ${r.entries} entr${r.entries===1?'y':'ies'}${r.createdAtMs?' · '+new Date(r.createdAtMs).toLocaleDateString():''}</span></div>
+        <div>
+          <button class="btn" data-approve-signup="${esc(r.id)}">Approve</button>
+          <button class="btn-outline" data-reject-signup="${esc(r.id)}" style="border-color:var(--danger);color:var(--danger);">Reject</button>
+        </div>
+      </div>`).join('') : '<p class="muted">No pending sign-ups.</p>'}
   </div>
   <div class="card">
     <h2 style="margin-top:0;">Admin — Games</h2>
@@ -1452,6 +1585,54 @@ Alex Wynn 2	CHICAGO"></textarea>
 // ---------- event handlers ----------
 function attachHandlers(){
   document.querySelectorAll('[data-nav]').forEach(el=>el.addEventListener('click', (e)=>{ e.preventDefault(); setTab(el.dataset.nav); }));
+  // Sign up — new players (login screen)
+  const signupBtn = document.getElementById('signup-btn');
+  if(signupBtn) signupBtn.addEventListener('click', ()=>{ if(state.signupOpen){ signupFormOpen = true; render(); } });
+  const suCancel = document.getElementById('su-cancel');
+  if(suCancel) suCancel.addEventListener('click', ()=>{ signupFormOpen = false; render(); });
+  const suSubmit = document.getElementById('su-submit');
+  if(suSubmit) suSubmit.addEventListener('click', async ()=>{
+    const name = document.getElementById('su-name').value.trim().replace(/\s+/g,' ');
+    const email = document.getElementById('su-email').value.trim();
+    const pw = document.getElementById('su-pw').value, pw2 = document.getElementById('su-pw2').value;
+    const count = Number(document.getElementById('su-entries').value);
+    if(!SIGNUP_NAME_RE.test(name)){ showMsg('error','Display name must be 2–30 characters: letters, numbers, spaces, and . \' - only.'); return; }
+    if(!EMAIL_RE.test(email)){ showMsg('error','Enter a valid email address.'); return; }
+    if(pw.length < 6){ showMsg('error','Password must be at least 6 characters.'); return; }
+    if(pw !== pw2){ showMsg('error','Passwords do not match.'); return; }
+    suSubmit.disabled = true;
+    try{
+      await submitNewSignup(name, email, pw, count);
+      signupFormOpen = false;
+      showMsg('ok', `Thanks, ${name}! Your sign-up was sent. You can log in once the commissioner approves it.`);
+    }catch(e){
+      suSubmit.disabled = false;
+      showMsg('error', e && e.code==='permission-denied' ? 'Sign up is closed right now.' : friendlyAuthError(e));
+    }
+  });
+
+  // Sign up — existing players requesting entries (Home tile)
+  const homeSignupBtn = document.getElementById('home-signup-btn');
+  if(homeSignupBtn) homeSignupBtn.addEventListener('click', ()=>{ homeSignupFormOpen = true; render(); });
+  const hsCancel = document.getElementById('hs-cancel');
+  if(hsCancel) hsCancel.addEventListener('click', ()=>{ homeSignupFormOpen = false; render(); });
+  const hsSubmit = document.getElementById('hs-submit');
+  if(hsSubmit) hsSubmit.addEventListener('click', async ()=>{
+    const email = document.getElementById('hs-email').value.trim();
+    const count = Number(document.getElementById('hs-entries').value);
+    if(!EMAIL_RE.test(email)){ showMsg('error','Enter a valid email address.'); return; }
+    hsSubmit.disabled = true;
+    try{
+      const ref = doc(db,'signupRequests',fbUser.uid);
+      await setDoc(ref, { displayName: myProfile.displayName, email, entries: count, returning: true, createdAt: Timestamp.now() });
+      state.signupRequests = [signupRequestFromSnap(await getDoc(ref))];
+      homeSignupFormOpen = false;
+      showMsg('ok','Request sent — the commissioner will approve it.');
+    }catch(e){
+      hsSubmit.disabled = false;
+      showMsg('error', e && e.code==='permission-denied' ? 'Sign up is closed right now.' : 'Could not send your request — please try again.');
+    }
+  });
 
   // Picks tab
   const entrySelect = document.getElementById('entry-select');
@@ -1601,6 +1782,43 @@ function attachHandlers(){
     updateDeadlineLabel();
     showMsg('ok', `Pick window updated: opens ${DAY_NAMES[openDay]} ${formatClock(oh,om)} ET, closes ${DAY_NAMES[closeDay]} ${formatClock(ch,cm)} ET.`);
   });
+  const toggleSignupBtn = document.getElementById('toggle-signup');
+  if(toggleSignupBtn) toggleSignupBtn.addEventListener('click', async ()=>{
+    const open = !state.signupOpen;
+    toggleSignupBtn.disabled = true;
+    try{ await setDoc(doc(db,'public','signup'), { open }); }
+    catch(e){ showMsg('error','Could not change sign up — check the Firestore rules for public/signup.'); return; }
+    state.signupOpen = open;
+    showMsg('ok', open ? 'Sign up is now open.' : 'Sign up is now closed.');
+  });
+  document.querySelectorAll('[data-approve-signup]').forEach(btn=>btn.addEventListener('click', async ()=>{
+    const r = state.signupRequests.find(x=>x.id===btn.dataset.approveSignup);
+    if(!r) return;
+    btn.disabled = true;
+    const prevUsers = state.users.map(x=>({...x})), prevEntries = [...state.entries];
+    let u = state.users.find(x=>x.id===r.id);
+    if(!u){ u = { id: r.id, displayName: r.displayName, isAdmin: false, mustChange: false }; state.users.push(u); }
+    if(r.email) u.email = r.email;
+    const start = userEntries(u.id).length;
+    for(let i=0; i<r.entries; i++){
+      state.entries.push({ id: uid('e'), userId: u.id, label: 'Entry '+(start+i+1), eliminated:false, eliminatedWeek:null, picks:{} });
+    }
+    try{ await saveState(); }
+    catch(e){ state.users = prevUsers; state.entries = prevEntries; return; }   // saveState already showed the error
+    try{ await deleteDoc(doc(db,'signupRequests',r.id)); }
+    catch(e){ showMsg('error',`${r.displayName} was added, but the request could not be cleared — refresh and reject it.`); return; }
+    state.signupRequests = state.signupRequests.filter(x=>x.id!==r.id);
+    showMsg('ok', `${r.displayName} approved with ${r.entries} entr${r.entries===1?'y':'ies'}.`);
+  }));
+  document.querySelectorAll('[data-reject-signup]').forEach(btn=>btn.addEventListener('click', async ()=>{
+    const r = state.signupRequests.find(x=>x.id===btn.dataset.rejectSignup);
+    if(!r) return;
+    btn.disabled = true;
+    try{ await deleteDoc(doc(db,'signupRequests',r.id)); }
+    catch(e){ showMsg('error','Could not reject that request — please try again.'); return; }
+    state.signupRequests = state.signupRequests.filter(x=>x.id!==r.id);
+    showMsg('ok', `${r.displayName}'s sign-up was rejected.`);
+  }));
   const awSel = document.getElementById('admin-week-select');
   if(awSel) awSel.addEventListener('change', ()=>{ adminWeek = Number(awSel.value); stagedGames=null; render(); });
   const fetchBtn = document.getElementById('fetch-espn');
@@ -1879,6 +2097,8 @@ function attachHandlers(){
       loading = false;
     } else {
       myProfile = null; state = defaultState(); session = { userId: null }; lastSaved = {}; activeTab = 'home';
+      render();
+      state.signupOpen = await loadSignupStatus();
     }
     render();
   });
