@@ -894,11 +894,13 @@ function renderHome(){
     <div class="card">
       <p>Picks are open — head to <strong>Make Picks</strong> to lock in Week ${week} before they close ${DAY_NAMES[c.day]} ${formatClock(c.hour,c.minute)} ET.</p>
       <button class="btn" data-nav="picks">Make Picks</button>
+      ${renderMyWeekPicks(user, week)}
     </div>`;
   } else {
     picksCard = `
     <div class="card">
       <p class="muted">Picks aren't open right now. They'll open <strong style="color:var(--text)">${DAY_NAMES[o.day]} ${formatClock(o.hour,o.minute)} ET</strong>.</p>
+      ${renderMyWeekPicks(user, week)}
     </div>`;
   }
 
@@ -913,6 +915,27 @@ function renderHome(){
     <p class="muted" style="line-height:1.6;">Pick one team to win, every week. Pick right, you move on. Pick wrong — or your team ties or you forget to pick — you're out. You can never pick the same team twice. Last entry standing wins the season. Eliminated? You can still chase weekly bragging rights in the High Score side game.</p>
   </div>
   ${renderHomeSignupCard()}`;
+}
+
+// The signed-in player's saved picks for the week, one row per entry, so they can confirm a pick went through.
+function renderMyWeekPicks(user, week){
+  const entries = userEntries(user.id);
+  if(!entries.length) return '';
+  const pickText = (abbr) => abbr && TEAM_MAP[abbr]
+    ? `<strong style="color:var(--text)">${TEAM_MAP[abbr].name}</strong>`
+    : `<span style="color:var(--danger)">No pick yet</span>`;
+  const rows = entries.map(e=>{
+    const p = e.picks[week] || {};
+    return `<tr>
+      <td>${e.label}</td>
+      <td>${e.eliminated && !p.survivor ? '<span class="muted">Out</span>' : pickText(p.survivor)}</td>
+      <td>${pickText(p.highscore)}</td>
+    </tr>`;
+  }).join('');
+  return `
+    <div class="hr"></div>
+    <h3 style="margin:0 0 8px;">Your Week ${week} picks</h3>
+    <table><thead><tr><th>Entry</th><th>Survivor</th><th>High Score</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
 let homeSignupFormOpen = false;
@@ -1645,13 +1668,18 @@ function attachHandlers(){
     const week = state.meta.currentWeek;
     const survivorEl = document.getElementById('survivor-select');
     const hsEl = document.getElementById('highscore-select');
+    if(survivorEl && !survivorEl.value){ showMsg('error','Pick a team to win before saving.'); return; }
+    const prevPick = entry.picks[week] ? { ...entry.picks[week] } : undefined;
     if(!entry.picks[week]) entry.picks[week] = {};
-    if(survivorEl){
-      if(!survivorEl.value){ showMsg('error','Pick a team to win before saving.'); return; }
-      entry.picks[week].survivor = survivorEl.value;
-    }
+    if(survivorEl) entry.picks[week].survivor = survivorEl.value;
     if(hsEl) entry.picks[week].highscore = hsEl.value;
-    await saveState();
+    try{ await saveState(); }
+    catch(e){
+      // Put back what's actually on the server so the Home page never shows an unsaved pick.
+      if(prevPick) entry.picks[week] = prevPick; else delete entry.picks[week];
+      render();
+      return;   // saveState already showed the error
+    }
     showMsg('ok','Picks saved.');
   });
 
