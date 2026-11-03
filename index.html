@@ -106,6 +106,18 @@
   .msg{ padding:10px 12px; border-radius:4px; font-size:14px; margin-bottom:14px; }
   .msg-error{ background:#3a2020; color:#ffb3a7; border:1px solid #5c2b2b;}
   .msg-ok{ background:#1c3324; color:#a7e3bb; border:1px solid #2c5138;}
+  details.admin-section{ padding:0; }
+  details.admin-section > summary{
+    list-style:none; cursor:pointer; padding:16px 20px;
+    display:flex; align-items:center; gap:12px;
+  }
+  details.admin-section > summary::-webkit-details-marker{ display:none; }
+  details.admin-section > summary h2{ margin:0; font-size:22px; }
+  details.admin-section > summary .hint{ color:var(--muted); font-size:13px; margin-left:auto; text-align:right; }
+  details.admin-section > summary .chev{ color:var(--muted); transition:transform .15s; }
+  details.admin-section[open] > summary .chev{ transform:rotate(90deg); }
+  details.admin-section[open] > summary{ border-bottom:1px solid var(--line); }
+  details.admin-section > .section-body{ padding:16px 20px 20px; }
 </style>
 </head>
 <body>
@@ -352,6 +364,7 @@ function buildDocs(){
   state.users.forEach(u=>{
     if(u.pending) return;
     docs['players/'+u.id] = { displayName: u.displayName, isAdmin: !!u.isAdmin, mustChange: !!u.mustChange };
+    if(u.nonPlayer) docs['players/'+u.id].nonPlayer = true;   // admin who runs the league but doesn't play
     if(u.email) docs['contacts/'+u.id] = { email: u.email };   // kept apart from players/, which every player can read
   });
   state.entries.forEach(e=>{
@@ -423,12 +436,12 @@ async function loadAll(){
   let playersLoaded = false;
   if(myProfile.isAdmin){
     const pSnap = await getDocs(collection(db,'players'));
-    s.users = pSnap.docs.map(d=>({ id: d.id, displayName: d.data().displayName, isAdmin: !!d.data().isAdmin, mustChange: !!d.data().mustChange }));
+    s.users = pSnap.docs.map(d=>({ id: d.id, displayName: d.data().displayName, isAdmin: !!d.data().isAdmin, mustChange: !!d.data().mustChange, ...(d.data().nonPlayer ? { nonPlayer: true } : {}) }));
     playersLoaded = true;
   } else {
     const seen = new Map();
     s.entries.forEach(e=>{ if(!seen.has(e.userId)) seen.set(e.userId, { id: e.userId, displayName: e.ownerName || '', isAdmin: false }); });
-    seen.set(userId, { id: userId, displayName: myProfile.displayName, isAdmin: !!myProfile.isAdmin, mustChange: !!myProfile.mustChange });
+    seen.set(userId, { id: userId, displayName: myProfile.displayName, isAdmin: !!myProfile.isAdmin, mustChange: !!myProfile.mustChange, ...(myProfile.nonPlayer ? { nonPlayer: true } : {}) });
     s.users = Array.from(seen.values());
   }
   // Emails live in contacts/{uid}, readable only by that player and admins. Failures just mean no emails shown.
@@ -498,8 +511,8 @@ async function saveSession(){ /* login state is handled by Firebase Auth */ }
 function setProgress(text){
   ['create-progress','import-progress'].forEach(id=>{ const el = document.getElementById(id); if(el) el.textContent = text; });
 }
-async function createPendingAccounts(){
-  const pending = state.users.filter(u=>u.pending);
+async function createPendingAccounts(only){
+  const pending = only ? [only] : state.users.filter(u=>u.pending);
   if(!pending.length){ showMsg('ok','There are no pending players.'); return; }
   const secApp = initializeApp(firebaseConfig, 'secondary-' + Date.now());
   const secAuth = getAuth(secApp);
@@ -889,6 +902,14 @@ function renderHome(){
       <p>Log in or create an account to submit your picks each week.</p>
       <button class="btn" data-nav="account">Log in / Sign up</button>
     </div>`;
+  } else if(user.nonPlayer){
+    picksCard = `
+    <div class="card">
+      <p class="muted">${windowOpen
+        ? `Picks are open for Week ${week} until ${DAY_NAMES[c.day]} ${formatClock(c.hour,c.minute)} ET.`
+        : `Picks aren't open right now. They'll open <strong style="color:var(--text)">${DAY_NAMES[o.day]} ${formatClock(o.hour,o.minute)} ET</strong>.`}
+      You're a non-playing commissioner, so you don't make picks.</p>
+    </div>`;
   } else if(windowOpen){
     picksCard = `
     <div class="card">
@@ -914,7 +935,7 @@ function renderHome(){
     <h3 style="margin-top:0;">How it works</h3>
     <p class="muted" style="line-height:1.6;">Pick one team to win, every week. Pick right, you move on. Pick wrong — or your team ties or you forget to pick — you're out. You can never pick the same team twice. Last entry standing wins the season. Eliminated? You can still chase weekly bragging rights in the High Score side game.</p>
   </div>
-  ${renderHomeSignupCard()}`;
+  ${user && user.nonPlayer ? '' : renderHomeSignupCard()}`;
 }
 
 // The signed-in player's saved picks for the week, one row per entry, so they can confirm a pick went through.
@@ -972,6 +993,7 @@ let pickEntryId = null;
 function renderPicks(){
   const user = currentUser();
   if(!user) return `<div class="card"><p>Please <a href="#" data-nav="account">log in</a> to make picks.</p></div>`;
+  if(user.nonPlayer) return `<div class="card"><p class="muted">You're a non-playing commissioner, so you don't make picks.</p></div>`;
   const entries = userEntries(user.id);
   if(entries.length===0) return `<div class="card"><p>You don't have any entries yet. Ask your commissioner to add one for you.</p></div>`;
   if(!isPickWindowOpen()){
@@ -1392,12 +1414,13 @@ function renderAccount(){
   return `
   <div class="card">
     <h2 style="margin-top:0;">${user ? user.displayName : 'Account'}</h2>
-    <p class="muted">${user && user.isAdmin?'Commissioner / Admin':'Player'}</p>
+    <p class="muted">${user && user.isAdmin ? (user.nonPlayer ? 'Commissioner / Admin (non-playing)' : 'Commissioner / Admin') : 'Player'}</p>
+    ${user && user.nonPlayer ? '' : `
     <div class="hr"></div>
     <h3>Your entries</h3>
     ${entries.length ? `<table><thead><tr><th>Entry</th><th>Status</th></tr></thead><tbody>
       ${entries.map(e=>`<tr><td>${e.label}</td><td>${isDisplayAlive(e)?'Alive':'Out — Week '+displayEliminatedWeek(e)}</td></tr>`).join('')}
-    </tbody></table>` : '<p class="muted">No entries yet — ask your commissioner to add one.</p>'}
+    </tbody></table>` : '<p class="muted">No entries yet — ask your commissioner to add one.</p>'}`}
     <div class="hr"></div>
     <h3>Change password</h3>
     <div class="field"><label>Current password</label><input type="password" id="cp-current" autocomplete="current-password"></div>
@@ -1410,6 +1433,14 @@ function renderAccount(){
 }
 
 // ---------- ADMIN ----------
+// Collapsible sections (collapsed by default). Open state is remembered across re-renders.
+const adminOpenSections = new Set();
+function adminSectionStart(id, title, hint){
+  return `<details class="card admin-section" data-admin-section="${id}" ${adminOpenSections.has(id)?'open':''}>
+    <summary><span class="chev">▶</span><h2>${title}</h2>${hint?`<span class="hint">${hint}</span>`:''}</summary>
+    <div class="section-body">`;
+}
+const ADMIN_SECTION_END = `</div></details>`;
 let adminWeek = null;
 let stagedGames = null;
 let confirmingRemoveUserId = null;
@@ -1447,7 +1478,7 @@ function renderAdmin(){
     </tr>`).join('');
 
   // Correct a Pick tool
-  const sortedUsers = [...state.users].sort((a,b)=>a.displayName.localeCompare(b.displayName));
+  const sortedUsers = state.users.filter(u=>!u.nonPlayer).sort((a,b)=>a.displayName.localeCompare(b.displayName));
   if(!correctPickUserId && sortedUsers.length) correctPickUserId = sortedUsers[0].id;
   const cpEntries = userEntries(correctPickUserId);
   if(!correctPickEntryId || !cpEntries.find(e=>e.id===correctPickEntryId)) correctPickEntryId = cpEntries[0] ? cpEntries[0].id : null;
@@ -1475,15 +1506,19 @@ function renderAdmin(){
     const ents = userEntries(u.id);
     const isConfirming = confirmingRemoveUserId===u.id;
     return `<div class="row" style="padding:8px 0;border-bottom:1px solid var(--line);">
-      <div><strong>${u.displayName}</strong> <span class="muted">${u.isAdmin?'· admin':''}${u.pending?' · login not created yet':''}${u.email?' · '+esc(u.email):''}</span><br>
-      <span class="muted" style="font-size:12px;">${ents.map(e=>e.label+(e.eliminated?' [out]':'')).join(', ')||'no entries'}</span></div>
+      <div><strong>${u.displayName}</strong> <span class="muted">${u.isAdmin?(u.nonPlayer?'· admin (non-player)':'· admin'):''}${u.pending?' · login not created yet':''}${u.email?' · '+esc(u.email):''}</span><br>
+      <span class="muted" style="font-size:12px;">${u.nonPlayer ? 'does not play' : (ents.map(e=>e.label+(e.eliminated?' [out]':'')).join(', ')||'no entries')}</span></div>
       <div>
         ${isConfirming ? `
           <span style="color:var(--danger);font-size:13px;margin-right:8px;">Remove ${u.displayName} and ${ents.length} entr${ents.length===1?'y':'ies'}?</span>
           <button class="btn-danger" style="border:none;border-radius:4px;padding:9px 14px;font-size:13px;font-weight:600;" data-confirm-remove-user="${u.id}">Yes, remove</button>
           <button class="btn-outline" data-cancel-remove-user="${u.id}">Cancel</button>
         ` : `
-          <button class="btn-outline" data-add-entry="${u.id}">Add entry</button> ${!u.isAdmin?`<button class="btn-outline" data-make-admin="${u.id}">Make Admin</button>`:''} <button class="btn-outline" data-remove-user="${u.id}" style="border-color:var(--danger);color:var(--danger);">Remove User</button>
+          ${u.nonPlayer ? '' : `<button class="btn-outline" data-add-entry="${u.id}">Add entry</button>`}
+          ${!u.isAdmin?`<button class="btn-outline" data-make-admin="${u.id}">Make Admin</button>`:''}
+          ${u.isAdmin && u.nonPlayer ? `<button class="btn-outline" data-set-nonplayer="${u.id}" data-value="0">Make Player</button>` : ''}
+          ${u.isAdmin && !u.nonPlayer && !ents.length ? `<button class="btn-outline" data-set-nonplayer="${u.id}" data-value="1">Make Non-Player</button>` : ''}
+          <button class="btn-outline" data-remove-user="${u.id}" style="border-color:var(--danger);color:var(--danger);">Remove User</button>
         `}
       </div>
     </div>`;
@@ -1500,8 +1535,7 @@ function renderAdmin(){
   const deadlineTimeVal = `${String(curDeadlineH).padStart(2,'0')}:${String(curDeadlineM).padStart(2,'0')}`;
 
   return `
-  <div class="card">
-    <h2 style="margin-top:0;">Admin — Pick Window</h2>
+  ${adminSectionStart('window', 'Pick Window', `Opens ${DAY_NAMES[state.meta.openDay??1]} ${formatClock(curOpenH,curOpenM)} · Closes ${DAY_NAMES[state.meta.deadlineDay??3]} ${formatClock(curDeadlineH,curDeadlineM)} ET`)}
     <p class="muted" style="font-size:13px;">Picks can only be submitted between these two points each week (Eastern Time). The countdown banner and label update automatically once saved, and the Make Picks page enforces this for real — not just as a display.</p>
     <h3 style="margin-bottom:6px;">Opens</h3>
     <div class="grid" style="grid-template-columns:1fr 1fr;">
@@ -1514,9 +1548,8 @@ function renderAdmin(){
       <div class="field"><label>Time (ET)</label><input type="time" id="deadline-time-input" value="${deadlineTimeVal}"></div>
     </div>
     <button class="btn" id="save-deadline">Save Pick Window</button>
-  </div>
-  <div class="card">
-    <h2 style="margin-top:0;">Admin — Sign Up</h2>
+  ${ADMIN_SECTION_END}
+  ${adminSectionStart('signup', 'Sign Up', `${state.signupOpen?'Open':'Closed'}${state.signupRequests.length?` · <strong style="color:var(--accent)">${state.signupRequests.length} pending</strong>`:''}`)}
     <p class="muted" style="font-size:13px;">Controls the Sign Up buttons on the login screen (new players) and the Home page (existing players requesting entries). When closed, they're greyed out. Each request waits here for your approval.</p>
     <p>Sign up is currently <strong style="color:${state.signupOpen?'var(--accent)':'var(--danger)'}">${state.signupOpen?'OPEN':'CLOSED'}</strong>.</p>
     <button class="btn" id="toggle-signup">${state.signupOpen?'Close Sign Up':'Open Sign Up'}</button>
@@ -1531,9 +1564,8 @@ function renderAdmin(){
           <button class="btn-outline" data-reject-signup="${esc(r.id)}" style="border-color:var(--danger);color:var(--danger);">Reject</button>
         </div>
       </div>`).join('') : '<p class="muted">No pending sign-ups.</p>'}
-  </div>
-  <div class="card">
-    <h2 style="margin-top:0;">Admin — Games</h2>
+  ${ADMIN_SECTION_END}
+  ${adminSectionStart('games', 'Games &amp; Weekly Processing', `League week ${state.meta.currentWeek}`)}
     <div class="row"><div></div><select id="admin-week-select" style="width:auto;">${weekOptions}</select></div>
     <div class="hr"></div>
     <button class="btn-outline" id="fetch-espn">Fetch Week ${week} from ESPN</button>
@@ -1568,22 +1600,26 @@ function renderAdmin(){
       <span>Current league week: <strong>${state.meta.currentWeek}</strong></span>
       <button class="btn-outline" id="advance-week">Advance to Week ${state.meta.currentWeek+1}</button>
     </div>
-  </div>
-  <div class="card">
-    <h2 style="margin-top:0;">Admin — Correct a Pick</h2>
+  ${ADMIN_SECTION_END}
+  ${adminSectionStart('correct', 'Correct a Pick')}
     <p class="muted" style="font-size:13px;">Fix a single entry's pick for any week. Saving automatically re-checks that entry's alive/eliminated status from Week 1 forward, so a corrected pick can revive or eliminate them as appropriate.</p>
     ${correctPickBlock}
-  </div>
-  <div class="card">
-    <h2 style="margin-top:0;">Admin — Users &amp; Entries</h2>
+  ${ADMIN_SECTION_END}
+  ${adminSectionStart('users', 'Users &amp; Entries', `${state.users.filter(u=>!u.nonPlayer).length} players · ${state.entries.length} entries`)}
     ${usersList || '<p class="empty">No users yet.</p>'}
     <div class="hr"></div>
     <button class="btn" id="create-accounts-btn">Create player logins (${state.users.filter(u=>u.pending).length} pending)</button>
     <p class="muted" style="font-size:12px;margin:6px 0 0;">Gives each pending player a login. Starting password = their display name; they must change it the first time they log in.</p>
     <div id="create-progress" class="muted" style="margin-top:8px;font-size:13px;"></div>
-  </div>
-  <div class="card">
-    <h3 style="margin-top:0;">Import roster &amp; Week ${week} picks</h3>
+    <div class="hr"></div>
+    <h3>Add a non-player admin</h3>
+    <p class="muted" style="font-size:13px;">For a commissioner who runs the league but doesn't play. They get full admin access but no entries, and don't appear in standings or player lists. Starting password = their display name; they must change it the first time they log in.</p>
+    <div class="row" style="justify-content:flex-start;">
+      <input type="text" id="new-admin-name" maxlength="30" placeholder="Display name" style="width:auto;flex:1;min-width:180px;">
+      <button class="btn" id="create-admin-btn">Create admin login</button>
+    </div>
+  ${ADMIN_SECTION_END}
+  ${adminSectionStart('roster', 'Import Roster &amp; Picks', `Week ${week}`)}
     <p class="muted" style="font-size:13px;">Paste rows of <code>Name&nbsp;&nbsp;Team</code> (tab, or comma, separated — pasting straight from a spreadsheet works). If a person has multiple entries, add a number at the end of their name for each row (e.g. "Alex Wynn 1", "Alex Wynn 2") — those will be grouped under one login with an entry each. People with no number get a single "Entry 1". New people are added as pending players — use “Create player logins” above to give them a login. Existing people (matched by name) just get this week's pick recorded on the right entry.</p>
     <div class="field"><label>Pick type</label>
       <select id="roster-import-type">
@@ -1595,14 +1631,13 @@ function renderAdmin(){
 Alex Wynn 1	JACKSONVILLE
 Alex Wynn 2	CHICAGO"></textarea>
     <button class="btn" id="roster-import" style="margin-top:10px;">Import for Week ${week}</button>
-  </div>
-  <div class="card">
-    <h3 style="margin-top:0;">Import league backup (JSON)</h3>
+  ${ADMIN_SECTION_END}
+  ${adminSectionStart('backup', 'Import League Backup (JSON)')}
     <p class="muted" style="font-size:13px;">One-time migration: choose a league-data-backup.json file. Players are added as pending and their logins are created automatically (this can take a minute or two). Entries with the same ID are overwritten, so don't use this once the season is live.</p>
     <input type="file" id="backup-file" accept=".json,application/json">
     <button class="btn" id="import-backup-btn" style="margin-top:10px;">Import backup &amp; create logins</button>
     <div id="import-progress" class="muted" style="margin-top:8px;font-size:13px;"></div>
-  </div>`;
+  ${ADMIN_SECTION_END}`;
 }
 
 // ---------- event handlers ----------
@@ -1788,6 +1823,9 @@ function attachHandlers(){
   });
 
   // Admin tab
+  document.querySelectorAll('details[data-admin-section]').forEach(d=>d.addEventListener('toggle', ()=>{
+    if(d.open) adminOpenSections.add(d.dataset.adminSection); else adminOpenSections.delete(d.dataset.adminSection);
+  }));
   const saveDeadlineBtn = document.getElementById('save-deadline');
   if(saveDeadlineBtn) saveDeadlineBtn.addEventListener('click', async ()=>{
     const openDaySelectEl = document.getElementById('open-day-select');
@@ -2011,6 +2049,27 @@ function attachHandlers(){
       showMsg('ok', `${user.displayName} is now an admin.`);
     }
   }));
+  document.querySelectorAll('[data-set-nonplayer]').forEach(btn=>btn.addEventListener('click', async ()=>{
+    const user = state.users.find(u=>u.id===btn.dataset.setNonplayer);
+    if(!user) return;
+    const makeNonPlayer = btn.dataset.value==='1';
+    if(makeNonPlayer && userEntries(user.id).length){ showMsg('error', `${user.displayName} still has entries — remove them first.`); return; }
+    if(makeNonPlayer) user.nonPlayer = true; else delete user.nonPlayer;
+    try{ await saveState(); }
+    catch(e){ if(makeNonPlayer) delete user.nonPlayer; else user.nonPlayer = true; render(); return; }
+    showMsg('ok', makeNonPlayer ? `${user.displayName} is now a non-playing admin.` : `${user.displayName} can now play — use Add entry to give them one.`);
+  }));
+  const createAdminBtn = document.getElementById('create-admin-btn');
+  if(createAdminBtn) createAdminBtn.addEventListener('click', async ()=>{
+    const name = document.getElementById('new-admin-name').value.trim().replace(/\s+/g,' ');
+    if(!SIGNUP_NAME_RE.test(name)){ showMsg('error','Display name must be 2–30 characters: letters, numbers, spaces, and . \' - only.'); return; }
+    if(state.users.some(u=>u.displayName.toLowerCase()===name.toLowerCase())){ showMsg('error', `There's already a user named ${name}.`); return; }
+    createAdminBtn.disabled = true;
+    const nu = { id: uid('u'), displayName: name, isAdmin: true, nonPlayer: true, pending: true, mustChange: true };
+    state.users.push(nu);
+    await createPendingAccounts(nu);
+    if(!nu.pending) showMsg('ok', `Created admin login for ${name}. Their starting password is "${startingPassword(name)}" — they'll choose a new one at first login.`);
+  });
   document.querySelectorAll('[data-remove-user]').forEach(btn=>btn.addEventListener('click', ()=>{
     confirmingRemoveUserId = btn.dataset.removeUser;
     render();
