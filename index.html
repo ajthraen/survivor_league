@@ -1534,7 +1534,36 @@ function renderAdmin(){
   const curDeadlineM = state.meta.deadlineMinute ?? 59;
   const deadlineTimeVal = `${String(curDeadlineH).padStart(2,'0')}:${String(curDeadlineM).padStart(2,'0')}`;
 
+  // This week's picks — lets admins spot missing picks before the window closes and send reminders.
+  // Only active entries need a Survivor pick; eliminated entries' buy-back picks are optional.
+  const pw = state.meta.currentWeek;
+  const pwRows = state.entries.map(e=>{
+    const p = e.picks[pw] || {};
+    return { e, owner: nameOfUser(e.userId) || e.ownerName || '—', p, missing: !e.eliminated && !p.survivor };
+  }).sort((a,b)=> (b.missing-a.missing) || (a.e.eliminated-b.e.eliminated) || a.owner.localeCompare(b.owner) || a.e.label.localeCompare(b.e.label));
+  const pwMissing = pwRows.filter(r=>r.missing);
+  const pwActive = pwRows.filter(r=>!r.e.eliminated).length;
+  const pwMissingOwners = [...new Set(pwMissing.map(r=>r.owner))].sort((a,b)=>a.localeCompare(b));
+  const pwTeam = (abbr) => abbr && TEAM_MAP[abbr] ? TEAM_MAP[abbr].name : '';
+  const weekPicksBody = `
+    <p class="muted" style="font-size:13px;">Every entry's Week ${pw} picks, updated as players save them (use ↻ Refresh to pull the latest). Active entries without a Survivor pick are listed first — they'll be eliminated if they don't pick before the window closes.</p>
+    ${pwMissing.length ? `
+      <p><strong style="color:var(--danger)">${pwMissing.length} active entr${pwMissing.length===1?'y':'ies'} missing a pick</strong> — ${pwMissingOwners.length} player${pwMissingOwners.length===1?'':'s'} to remind:</p>
+      <p style="font-size:14px;">${pwMissingOwners.join(', ')}</p>`
+    : `<p><strong style="color:var(--accent)">All ${pwActive} active entries have a Survivor pick.</strong></p>`}
+    ${pwRows.length ? `<table><thead><tr><th>Owner</th><th>Entry</th><th>Survivor</th><th>High Score</th></tr></thead><tbody>
+      ${pwRows.map(r=>`<tr class="${r.e.eliminated?'eliminated-row':''}">
+        <td>${r.owner}</td>
+        <td>${r.e.label}${r.e.eliminated?' <span class="muted">[out]</span>':''}</td>
+        <td>${r.p.survivor ? pwTeam(r.p.survivor) : (r.missing ? '<strong style="color:var(--danger)">Missing</strong>' : '<span class="muted">—</span>')}</td>
+        <td>${r.p.highscore ? pwTeam(r.p.highscore) : '<span class="muted">—</span>'}</td>
+      </tr>`).join('')}
+    </tbody></table>` : '<p class="empty">No entries yet.</p>'}`;
+
   return `
+  ${adminSectionStart('weekpicks', `Week ${pw} Picks`, pwMissing.length ? `<strong style="color:var(--danger)">${pwMissing.length} missing</strong> · ${pwActive-pwMissing.length}/${pwActive} in` : `All ${pwActive} in`)}
+    ${weekPicksBody}
+  ${ADMIN_SECTION_END}
   ${adminSectionStart('window', 'Pick Window', `Opens ${DAY_NAMES[state.meta.openDay??1]} ${formatClock(curOpenH,curOpenM)} · Closes ${DAY_NAMES[state.meta.deadlineDay??3]} ${formatClock(curDeadlineH,curDeadlineM)} ET`)}
     <p class="muted" style="font-size:13px;">Picks can only be submitted between these two points each week (Eastern Time). The countdown banner and label update automatically once saved, and the Make Picks page enforces this for real — not just as a display.</p>
     <h3 style="margin-bottom:6px;">Opens</h3>
