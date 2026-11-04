@@ -750,6 +750,10 @@ function isPickWindowOpen(){
   const lastClose = mostRecentOccurrence(c.day, c.hour, c.minute, true);
   return lastOpen > lastClose;
 }
+// Other players' picks for the current week stay hidden while the pick window is open, so
+// nobody can see what others picked before making their own. Your own entries are always shown.
+function weekPicksHidden(week){ return Number(week)===state.meta.currentWeek && isPickWindowOpen(); }
+function pickHiddenFor(e, week){ return weekPicksHidden(week) && e.userId!==session.userId; }
 function updateDeadlineLabel(){
   const el = document.getElementById('deadline-label');
   if(!el || !state) return;
@@ -1102,6 +1106,15 @@ function renderStandings(){
         chips.push(`<div style="width:30px;"></div>`);
         continue;
       }
+      if(pickHiddenFor(e, w)){
+        chips.push(
+          `<div style="display:flex;flex-direction:column;align-items:center;padding:2px 0;width:30px;text-align:center;" title="Hidden until picks close">` +
+          `<span style="font-size:9px;color:var(--muted);line-height:1.4;">${w}</span>` +
+          `<span style="font-size:12px;font-weight:700;color:var(--muted);line-height:1.3;">?</span>` +
+          `</div>`
+        );
+        continue;
+      }
       const abbr = (e.picks[w] && e.picks[w].survivor) || null;
       let color = 'var(--muted)';
       if(abbr){
@@ -1163,7 +1176,7 @@ function renderStandings(){
     <table style="min-width:500px;">
       <thead><tr>
         <th style="position:sticky;left:0;background:var(--surface);z-index:2;box-shadow:2px 0 0 var(--line);">Owner</th>
-        <th>Entry</th><th>Picks</th><th>Status</th>
+        <th>Entry</th><th>Picks${weekPicksHidden(totalWeeks)?` <span style="font-weight:400;">(Week ${totalWeeks} picks shown as ? until picks close)</span>`:''}</th><th>Status</th>
       </tr></thead>
       <tbody>${rows}</tbody>
     </table>
@@ -1291,7 +1304,7 @@ function renderLeagueStats(){
   const pickStats = {}; // abbr -> {picks, wins, losses, pending}
   state.entries.forEach(e=>{
     Object.entries(e.picks).forEach(([w,p])=>{
-      if(!p.survivor) return;
+      if(!p.survivor || weekPicksHidden(w)) return;   // this week's picks stay out until picks close
       const abbr = p.survivor;
       if(!pickStats[abbr]) pickStats[abbr] = {picks:0, wins:0, losses:0, pending:0};
       pickStats[abbr].picks++;
@@ -1321,7 +1334,8 @@ function renderLeagueStats(){
 
   // Pick popularity for a single selected week.
   const wkPickStats = {}; // abbr -> count
-  state.entries.forEach(e=>{
+  const wkHidden = weekPicksHidden(statsWeekSelected);
+  if(!wkHidden) state.entries.forEach(e=>{
     const pick = e.picks[statsWeekSelected] && e.picks[statsWeekSelected].survivor;
     if(!pick) return;
     wkPickStats[pick] = (wkPickStats[pick]||0)+1;
@@ -1345,6 +1359,7 @@ function renderLeagueStats(){
   </div>
   <div class="card">
     <h3 style="margin-top:0;">Pick Popularity (season)</h3>
+    ${weekPicksHidden(state.meta.currentWeek) ? `<p class="muted" style="font-size:13px;">Week ${state.meta.currentWeek} picks will be included once picks close.</p>` : ''}
     ${pickRows ? `<table><thead><tr><th>Team</th><th>Times Picked</th><th>% of All Picks</th><th>Record when picked</th></tr></thead><tbody>${pickRows}</tbody></table>` : '<p class="empty">No picks recorded yet.</p>'}
   </div>
   <div class="card">
@@ -1353,7 +1368,7 @@ function renderLeagueStats(){
       <select id="stats-week-select" style="width:auto;">${wkWeekOptions}</select>
     </div>
     <div class="hr"></div>
-    ${wkPickRows ? `<table><thead><tr><th>Team</th><th>Times Picked</th><th>% of Week's Picks</th><th>Result</th></tr></thead><tbody>${wkPickRows}</tbody></table>` : '<p class="empty">No picks recorded for this week yet.</p>'}
+    ${wkHidden ? `<p class="empty">Week ${statsWeekSelected} picks are hidden until picks close.</p>` : wkPickRows ? `<table><thead><tr><th>Team</th><th>Times Picked</th><th>% of Week's Picks</th><th>Result</th></tr></thead><tbody>${wkPickRows}</tbody></table>` : '<p class="empty">No picks recorded for this week yet.</p>'}
   </div>
   <div class="card">
     <h3 style="margin-top:0;">Eliminations by Week</h3>
