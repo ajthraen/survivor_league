@@ -934,6 +934,7 @@ function renderHome(){
     <h1 style="margin:0 0 6px;font-size:28px;">Week ${week}</h1>
     <p class="muted" style="margin:0;">${state.entries.length} total entries · <strong style="color:var(--accent)">${activeCount}</strong> still alive</p>
   </div>
+  ${windowOpen ? '' : renderPickPopularityByWeek()}
   ${picksCard}
   <div class="card">
     <h3 style="margin-top:0;">How it works</h3>
@@ -1334,8 +1335,38 @@ function renderRoundUps(){
 }
 
 // ---------- LEAGUE STATS ----------
-function renderLeagueStats(){
+// Pick popularity for a single selected week. Shown on both League Stats and Home.
+function renderPickPopularityByWeek(){
   if(statsWeekSelected===null) statsWeekSelected = state.meta.currentWeek;
+  const wkPickStats = {}; // abbr -> count
+  const wkHidden = weekPicksHidden(statsWeekSelected);
+  if(!wkHidden) state.entries.forEach(e=>{
+    const pick = e.picks[statsWeekSelected] && e.picks[statsWeekSelected].survivor;
+    if(!pick) return;
+    wkPickStats[pick] = (wkPickStats[pick]||0)+1;
+  });
+  const totalWkPicks = Object.values(wkPickStats).reduce((sum,n)=>sum+n,0);
+  const wkWeekOptions = Array.from({length:18},(_,i)=>i+1).map(w=>`<option value="${w}" ${w===statsWeekSelected?'selected':''}>Week ${w}</option>`).join('');
+  const wkPickRows = Object.entries(wkPickStats)
+    .sort((a,b)=>b[1]-a[1])
+    .map(([abbr,count])=>{
+      const pct = totalWkPicks ? ((count/totalWkPicks)*100).toFixed(1) : '0.0';
+      const result = gameResultForTeam(statsWeekSelected, abbr);
+      const resultLabel = result==='win'?'Won':result==='loss'?'Lost':result==='tie'?'Tied':'Pending';
+      return `<tr><td>${TEAM_MAP[abbr]?.name||abbr}</td><td style="font-weight:700;">${count}</td><td class="muted">${pct}%</td><td class="muted">${resultLabel}</td></tr>`;
+    })
+    .join('');
+  return `
+  <div class="card">
+    <div class="row">
+      <h3 style="margin:0;">Pick Popularity by Week</h3>
+      <select id="stats-week-select" style="width:auto;">${wkWeekOptions}</select>
+    </div>
+    <div class="hr"></div>
+    ${wkHidden ? `<p class="empty">Week ${statsWeekSelected} picks are hidden until picks close.</p>` : wkPickRows ? `<table><thead><tr><th>Team</th><th>Times Picked</th><th>% of Week's Picks</th><th>Result</th></tr></thead><tbody>${wkPickRows}</tbody></table>` : '<p class="empty">No picks recorded for this week yet.</p>'}
+  </div>`;
+}
+function renderLeagueStats(){
   const totalEntries = state.entries.length;
   const aliveCount = state.entries.filter(e=>isDisplayAlive(e)).length;
   const outCount = totalEntries - aliveCount;
@@ -1372,26 +1403,6 @@ function renderLeagueStats(){
     return `<tr><td>Week ${w}</td><td style="font-weight:700;">${elimByWeek[w]}</td><td class="muted">${pct}% of all entries</td></tr>`;
   }).join('');
 
-  // Pick popularity for a single selected week.
-  const wkPickStats = {}; // abbr -> count
-  const wkHidden = weekPicksHidden(statsWeekSelected);
-  if(!wkHidden) state.entries.forEach(e=>{
-    const pick = e.picks[statsWeekSelected] && e.picks[statsWeekSelected].survivor;
-    if(!pick) return;
-    wkPickStats[pick] = (wkPickStats[pick]||0)+1;
-  });
-  const totalWkPicks = Object.values(wkPickStats).reduce((sum,n)=>sum+n,0);
-  const wkWeekOptions = Array.from({length:18},(_,i)=>i+1).map(w=>`<option value="${w}" ${w===statsWeekSelected?'selected':''}>Week ${w}</option>`).join('');
-  const wkPickRows = Object.entries(wkPickStats)
-    .sort((a,b)=>b[1]-a[1])
-    .map(([abbr,count])=>{
-      const pct = totalWkPicks ? ((count/totalWkPicks)*100).toFixed(1) : '0.0';
-      const result = gameResultForTeam(statsWeekSelected, abbr);
-      const resultLabel = result==='win'?'Won':result==='loss'?'Lost':result==='tie'?'Tied':'Pending';
-      return `<tr><td>${TEAM_MAP[abbr]?.name||abbr}</td><td style="font-weight:700;">${count}</td><td class="muted">${pct}%</td><td class="muted">${resultLabel}</td></tr>`;
-    })
-    .join('');
-
   return `
   <div class="card card-accent">
     <h2 style="margin-top:0;">League Stats</h2>
@@ -1402,14 +1413,7 @@ function renderLeagueStats(){
     ${weekPicksHidden(state.meta.currentWeek) ? `<p class="muted" style="font-size:13px;">Week ${state.meta.currentWeek} picks will be included once picks close.</p>` : ''}
     ${pickRows ? `<table><thead><tr><th>Team</th><th>Times Picked</th><th>% of All Picks</th><th>Record when picked</th></tr></thead><tbody>${pickRows}</tbody></table>` : '<p class="empty">No picks recorded yet.</p>'}
   </div>
-  <div class="card">
-    <div class="row">
-      <h3 style="margin:0;">Pick Popularity by Week</h3>
-      <select id="stats-week-select" style="width:auto;">${wkWeekOptions}</select>
-    </div>
-    <div class="hr"></div>
-    ${wkHidden ? `<p class="empty">Week ${statsWeekSelected} picks are hidden until picks close.</p>` : wkPickRows ? `<table><thead><tr><th>Team</th><th>Times Picked</th><th>% of Week's Picks</th><th>Result</th></tr></thead><tbody>${wkPickRows}</tbody></table>` : '<p class="empty">No picks recorded for this week yet.</p>'}
-  </div>
+  ${renderPickPopularityByWeek()}
   <div class="card">
     <h3 style="margin-top:0;">Eliminations by Week</h3>
     ${elimRows ? `<table><thead><tr><th>Week</th><th>Entries Out</th><th>% of All Entries</th></tr></thead><tbody>${elimRows}</tbody></table>` : '<p class="empty">No eliminations yet.</p>'}
