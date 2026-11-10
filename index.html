@@ -1397,10 +1397,11 @@ function renderLeagueStats(){
   // Eliminations by week (net, i.e. after accounting for buy-back revivals — based on current eliminatedWeek).
   const elimByWeek = {};
   state.entries.forEach(e=>{ if(e.eliminated && e.eliminatedWeek){ elimByWeek[e.eliminatedWeek] = (elimByWeek[e.eliminatedWeek]||0)+1; } });
-  const elimWeeks = Object.keys(elimByWeek).map(Number).sort((a,b)=>a-b);
+  const elimWeeks = Array.from({length:state.meta.currentWeek},(_,i)=>i+1); // every week so far, even with 0 out
   const elimRows = elimWeeks.map(w=>{
-    const pct = totalEntries ? ((elimByWeek[w]/totalEntries)*100).toFixed(1) : '0.0';
-    return `<tr><td>Week ${w}</td><td style="font-weight:700;">${elimByWeek[w]}</td><td class="muted">${pct}% of all entries</td></tr>`;
+    const count = elimByWeek[w] || 0;
+    const pct = totalEntries ? ((count/totalEntries)*100).toFixed(1) : '0.0';
+    return `<tr><td>Week ${w}</td><td style="font-weight:700;">${count}</td><td class="muted">${pct}% of all entries</td></tr>`;
   }).join('');
 
   return `
