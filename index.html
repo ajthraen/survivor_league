@@ -1143,7 +1143,7 @@ function renderStandings(){
     return `
     <tr>
       <td class="name" style="position:sticky;left:0;background:var(--surface);z-index:2;box-shadow:2px 0 0 var(--line);">${ownerName(e)}</td>
-      <td class="muted">${e.label}</td>
+      <td class="muted" style="text-align:center;">${e.label}</td>
       <td>${pickHistory(e)}</td>
       <td style="color:var(--accent);font-weight:700;">Alive${pendingWeek?` <span class="muted" style="font-weight:400;font-size:12px;">(buy-back pending, Wk ${pendingWeek})</span>`:''}</td>
     </tr>`;
@@ -1151,7 +1151,7 @@ function renderStandings(){
   rows += out.map(e=>`
     <tr class="eliminated-row">
       <td class="name" style="position:sticky;left:0;background:var(--surface-2);z-index:2;box-shadow:2px 0 0 var(--line);">${ownerName(e)}</td>
-      <td>${e.label}</td>
+      <td style="text-align:center;">${e.label}</td>
       <td>${pickHistory(e, displayEliminatedWeek(e))}</td>
       <td>Out — Week ${displayEliminatedWeek(e)}</td>
     </tr>`).join('');
@@ -1173,6 +1173,9 @@ function renderStandings(){
     });
     return { entry: e, owner: ownerName(e), total, pending, shown };
   }).filter(x=>x.shown>0).sort((a,b)=>(b.total-a.total) || a.owner.localeCompare(b.owner) || a.entry.label.localeCompare(b.entry.label));
+  // Place gets its own fixed-width pinned column so the pinned Owner column can sit right beside it.
+  const HS_PLACE_W = 34;
+  const HS_PLACE_COL = `width:${HS_PLACE_W}px;min-width:${HS_PLACE_W}px;max-width:${HS_PLACE_W}px;text-align:center;`;
   // Same one-column-per-week grid as the survivor picks, with each pick's points underneath.
   function hsPickHistory(e){
     const cell = (w, team, teamColor, note, title) =>
@@ -1194,8 +1197,9 @@ function renderStandings(){
   }
   const hsRows = hsTotals.map(x=>`
     <tr>
-      <td class="name" style="position:sticky;left:0;background:var(--surface);z-index:2;box-shadow:2px 0 0 var(--line);"><span style="display:inline-block;min-width:26px;color:var(--accent);font-weight:700;">${hsTotals.findIndex(y=>y.total===x.total)+1}</span>${x.owner}</td>
-      <td class="muted">${x.entry.label}</td>
+      <td style="position:sticky;left:0;background:var(--surface);z-index:2;${HS_PLACE_COL}color:var(--accent);font-weight:700;">${hsTotals.findIndex(y=>y.total===x.total)+1}</td>
+      <td class="name" style="position:sticky;left:${HS_PLACE_W}px;background:var(--surface);z-index:2;box-shadow:2px 0 0 var(--line);">${x.owner}</td>
+      <td class="muted" style="text-align:center;">${x.entry.label}</td>
       <td>${hsPickHistory(x.entry)}</td>
       <td style="color:var(--accent);font-weight:700;">${x.total}${x.pending?` <span class="muted" style="font-weight:400;font-size:12px;">(${x.pending} pending)</span>`:''}</td>
     </tr>`).join('');
@@ -1208,7 +1212,7 @@ function renderStandings(){
     <table style="min-width:500px;">
       <thead><tr>
         <th style="position:sticky;left:0;background:var(--surface);z-index:2;box-shadow:2px 0 0 var(--line);">Owner</th>
-        <th>Entry</th><th>Picks${weekPicksHidden(totalWeeks)?` <span style="font-weight:400;">(Week ${totalWeeks} picks shown as ? until picks close)</span>`:''}</th><th>Status</th>
+        <th style="text-align:center;">Entry</th><th>Picks${weekPicksHidden(totalWeeks)?` <span style="font-weight:400;">(Week ${totalWeeks} picks shown as ? until picks close)</span>`:''}</th><th>Status</th>
       </tr></thead>
       <tbody>${rows}</tbody>
     </table>
@@ -1221,8 +1225,9 @@ function renderStandings(){
     <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;">
     <table style="min-width:500px;">
       <thead><tr>
-        <th style="position:sticky;left:0;background:var(--surface);z-index:2;box-shadow:2px 0 0 var(--line);"><span style="display:inline-block;min-width:26px;">#</span>Owner</th>
-        <th>Entry</th><th>Picks${weekPicksHidden(totalWeeks)?` <span style="font-weight:400;">(Week ${totalWeeks} picks shown as ? until picks close)</span>`:''}</th><th>Total Points</th>
+        <th style="position:sticky;left:0;background:var(--surface);z-index:2;${HS_PLACE_COL}">#</th>
+        <th style="position:sticky;left:${HS_PLACE_W}px;background:var(--surface);z-index:2;box-shadow:2px 0 0 var(--line);">Owner</th>
+        <th style="text-align:center;">Entry</th><th>Picks${weekPicksHidden(totalWeeks)?` <span style="font-weight:400;">(Week ${totalWeeks} picks shown as ? until picks close)</span>`:''}</th><th>Total Points</th>
       </tr></thead>
       <tbody>${hsRows}</tbody>
     </table>
